@@ -1,37 +1,76 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
-import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import 'chats_tab.dart';
+import 'contacts_tab.dart';
+import 'profile_tab.dart';
 
-/// Placeholder landing screen shown after a successful login/signup.
-/// Replace with the real chat screens as they are built.
-class HomeScreen extends StatelessWidget {
+/// Main screen shown after login, with a bottom bar to switch between tabs.
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final User? user = AuthService().currentUser;
-    final displayName = user?.displayName;
-    final greeting = (displayName != null && displayName.isNotEmpty)
-        ? displayName
-        : (user?.email ?? 'there');
+  State<HomeScreen> createState() => _HomeScreenState();
+}
 
+class _HomeScreenState extends State<HomeScreen> {
+  int _currentIndex = 0;
+
+  static const _titles = ['Messages', 'Contacts', 'Profile'];
+
+  Widget _buildTab() {
+    switch (_currentIndex) {
+      case 1:
+        return const ContactsTab();
+      case 2:
+        return const ProfileTab();
+      default:
+        return const ChatsTab();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chat'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Log out',
-            onPressed: () => AuthService().signOut(),
+        title: Text(
+          _titles[_currentIndex],
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: AppColors.ink,
+      ),
+      body: _buildTab(),
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton(
+              tooltip: 'New chat',
+              backgroundColor: AppColors.gold,
+              foregroundColor: AppColors.ink,
+              onPressed: () => setState(() => _currentIndex = 1),
+              child: const Icon(Icons.edit_outlined),
+            )
+          : null,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _currentIndex,
+        onDestinationSelected: (index) => setState(() => _currentIndex = index),
+        backgroundColor: AppColors.inkRaised,
+        indicatorColor: AppColors.gold.withValues(alpha: 0.25),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble, color: AppColors.gold),
+            label: 'Messages',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.people_outline),
+            selectedIcon: Icon(Icons.people, color: AppColors.gold),
+            label: 'Contacts',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person, color: AppColors.gold),
+            label: 'Profile',
           ),
         ],
-      ),
-      body: Center(
-        child: Text(
-          'Welcome, $greeting!',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
       ),
     );
   }
