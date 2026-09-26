@@ -9,6 +9,13 @@ class AppColors {
   static const forest = Color(0xFF4E6E5D);
   static const ink = Color(0xFF1A1B25);
   static const terracotta = Color(0xFFD17A5A);
+
+  // Neutral surfaces layered on top of [ink] for the chat UI.
+  static const inkRaised = Color(0xFF22232F);
+  static const inkHigh = Color(0xFF2C2D3B);
+  static const divider = Color(0xFF34354A);
+  static const textMuted = Color(0xFF9A9BB0);
+  static const online = Color(0xFF3DD68C);
 }
 
 final ThemeData appTheme = ThemeData(
@@ -39,6 +46,12 @@ final ThemeData appTheme = ThemeData(
       foregroundColor: AppColors.ink,
     ),
   ),
+  dividerTheme: const DividerThemeData(color: AppColors.divider, space: 1),
+  bottomSheetTheme: const BottomSheetThemeData(
+    backgroundColor: AppColors.inkRaised,
+    showDragHandle: true,
+  ),
+  popupMenuTheme: const PopupMenuThemeData(color: AppColors.inkHigh),
   textButtonTheme: TextButtonThemeData(
     style: TextButton.styleFrom(foregroundColor: AppColors.gold),
   ),
