@@ -48,9 +48,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       await _authService.signOut();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created! Please log in.'),
-          ),
+          const SnackBar(content: Text('Account created! Please log in.')),
         );
         Navigator.of(context).pop();
       }
