@@ -1,13 +1,20 @@
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'user_service.dart';
+
 /// Thin wrapper around [FirebaseAuth] that translates errors into
 /// user-friendly messages and exposes the auth state stream for session
 /// persistence (Firebase automatically restores the session on app restart).
 class AuthService {
-  AuthService({FirebaseAuth? firebaseAuth})
-    : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+  AuthService({FirebaseAuth? firebaseAuth, UserService? userService})
+    : _firebaseAuth = firebaseAuth ?? FirebaseAuth.instance,
+      _userServiceOverride = userService;
 
   final FirebaseAuth _firebaseAuth;
+  final UserService? _userServiceOverride;
+
+  // Created lazily so screens that never sign in don't touch Firestore.
+  late final UserService _userService = _userServiceOverride ?? UserService();
 
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
 
@@ -23,25 +30,57 @@ class AuthService {
         email: email.trim(),
         password: password,
       );
-      await credential.user?.updateDisplayName(name.trim());
-      await credential.user?.reload();
+      final user = credential.user!;
+      await user.updateDisplayName(name.trim());
+      await _userService.createProfile(uid: user.uid, name: name, email: email);
+      await user.reload();
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageForCode(e.code));
+    } on FirebaseException {
+      // The account exists but the profile write failed; signIn will retry it.
+      throw AuthException(
+        'Account created, but your profile could not be saved.',
+      );
     }
   }
 
   Future<void> signIn({required String email, required String password}) async {
     try {
-      await _firebaseAuth.signInWithEmailAndPassword(
+      final credential = await _firebaseAuth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
+      final user = credential.user!;
+      await _userService.ensureProfile(
+        uid: user.uid,
+        name: (user.displayName?.isNotEmpty ?? false)
+            ? user.displayName!
+            : 'User',
+        email: user.email ?? email,
+      );
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageForCode(e.code));
+    } on FirebaseException {
+      throw AuthException('Signed in, but your profile could not be loaded.');
     }
   }
 
   Future<void> signOut() => _firebaseAuth.signOut();
+
+  /// Updates the profile in Firestore and keeps the Firebase Auth display
+  /// name in sync with it.
+  Future<void> updateProfile({
+    required String name,
+    required String bio,
+  }) async {
+    final user = _firebaseAuth.currentUser!;
+    try {
+      await _userService.updateProfile(user.uid, name: name, bio: bio);
+      await user.updateDisplayName(name.trim());
+    } on FirebaseException {
+      throw AuthException('Could not save your profile. Please try again.');
+    }
+  }
 
   String _messageForCode(String code) {
     switch (code) {
