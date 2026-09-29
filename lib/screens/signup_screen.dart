@@ -114,6 +114,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       if (value == null || value.trim().isEmpty) {
                         return 'Please enter your name.';
                       }
+                      if (value.trim().length > 50) {
+                        return 'Name must be 50 characters or fewer.';
+                      }
                       return null;
                     },
                   ),
