@@ -13,6 +13,16 @@ service cloud.firestore {
         && request.resource.data.name.size() <= 50
         && request.resource.data.get('bio', '').size() <= 140;
       allow delete: if false;
+
+      match /contacts/{contactUid} {
+        allow read, delete: if request.auth != null
+          && request.auth.uid == uid;
+        allow create, update: if request.auth != null
+          && request.auth.uid == uid
+          && contactUid != uid
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt == request.time;
+      }
     }
   }
 }

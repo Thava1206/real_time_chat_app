@@ -58,8 +58,8 @@ class AppUser {
     );
   }
 
-  /// Fields written when the profile is first created. `nameLower` lets the
-  /// contacts screen search users by name with a case-insensitive prefix query.
+  /// Fields written when the profile is first created. `nameLower` is kept as
+  /// a normalized value for any future case-insensitive name search.
   Map<String, dynamic> toFirestore() => {
     'name': name,
     'nameLower': name.toLowerCase(),
