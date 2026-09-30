@@ -1,16 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
 import 'package:real_time_chat_app/data/sample_data.dart';
 import 'package:real_time_chat_app/screens/chat_screen.dart';
 import 'package:real_time_chat_app/screens/home_screen.dart';
+import 'package:real_time_chat_app/services/user_service.dart';
 
 // The Profile tab reads the signed-in Firebase user, which isn't available in
 // widget tests, so it is covered separately in profile_tab_test.dart.
 
 void main() {
-  Future<void> pumpHome(WidgetTester tester) =>
-      tester.pumpWidget(const MaterialApp(home: HomeScreen()));
+  Future<UserService> pumpHome(WidgetTester tester) async {
+    final userService = UserService(firestore: FakeFirebaseFirestore());
+    await userService.createProfile(
+      uid: 'me',
+      name: 'Current User',
+      email: 'me@example.com',
+    );
+    await userService.createProfile(
+      uid: 'maya',
+      name: 'Maya Chen',
+      email: 'maya@example.com',
+    );
+    await userService.createProfile(
+      uid: 'priya',
+      name: 'Priya Patel',
+      email: 'priya@example.com',
+    );
+    await userService.addContact('me', 'maya');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(currentUserId: 'me', userService: userService),
+      ),
+    );
+    return userService;
+  }
 
   testWidgets('opens on the Messages tab with the chat list', (tester) async {
     await pumpHome(tester);
@@ -41,7 +66,9 @@ void main() {
 
     expect(find.widgetWithText(AppBar, 'Contacts'), findsOneWidget);
     expect(find.text('Search messages'), findsNothing);
-    expect(find.byTooltip('Message'), findsNWidgets(sampleChats.length));
+    expect(find.byTooltip('Message'), findsOneWidget);
+    expect(find.text('Maya Chen'), findsOneWidget);
+    expect(find.text('Add Contact'), findsOneWidget);
     // The new-chat button only belongs on the Messages tab.
     expect(find.byType(FloatingActionButton), findsNothing);
   });
@@ -90,5 +117,30 @@ void main() {
 
     final screen = tester.widget<ChatScreen>(find.byType(ChatScreen));
     expect(screen.chat.name, sampleChats.first.name);
+  });
+
+  testWidgets('Add Contact searches and saves a user under contacts', (
+    tester,
+  ) async {
+    final userService = await pumpHome(tester);
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add Contact'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'priya@example.com');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Search users'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Priya Patel'), findsOneWidget);
+    await tester.tap(find.byTooltip('Add Priya Patel'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Done'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Priya Patel'), findsOneWidget);
+    final contacts = await userService.watchContacts('me').first;
+    expect(contacts.map((contact) => contact.name), contains('Priya Patel'));
   });
 }

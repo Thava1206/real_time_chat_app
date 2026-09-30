@@ -2,6 +2,7 @@ import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:real_time_chat_app/models/app_user.dart';
+import 'package:real_time_chat_app/models/user_contact.dart';
 import 'package:real_time_chat_app/services/user_service.dart';
 
 void main() {
@@ -62,6 +63,60 @@ void main() {
   test('watchUser emits null for a missing profile', () async {
     expect(await userService.watchUser('nobody').first, isNull);
   });
+
+  test(
+    'searchUsers finds an exact email and excludes the signed-in user',
+    () async {
+      await userService.createProfile(
+        uid: 'u1',
+        name: 'Current User',
+        email: 'current@example.com',
+      );
+      await userService.createProfile(
+        uid: 'u2',
+        name: 'Priya Patel',
+        email: 'priya@example.com',
+      );
+
+      final users = await userService.searchUsers(
+        ' priya@example.com ',
+        excludingUid: 'u1',
+      );
+
+      expect(users.map((user) => user.name), ['Priya Patel']);
+    },
+  );
+
+  test(
+    'addContact stores a UserContact link and resolves its profile',
+    () async {
+      await userService.createProfile(
+        uid: 'u1',
+        name: 'Jane Doe',
+        email: 'jane@example.com',
+      );
+      await userService.createProfile(
+        uid: 'u2',
+        name: 'Sam Okafor',
+        email: 'sam@example.com',
+      );
+
+      await userService.addContact('u1', 'u2');
+
+      final linkDocument = await firestore
+          .collection('users')
+          .doc('u1')
+          .collection('contacts')
+          .doc('u2')
+          .get();
+      final link = UserContact.fromFirestore(linkDocument);
+      expect(link.uid, 'u2');
+      expect(link.createdAt, isNotNull);
+
+      final contacts = await userService.watchContacts('u1').first;
+      expect(contacts.map((contact) => contact.name), ['Sam Okafor']);
+    },
+  );
 
   test('updateProfile changes name, search name and bio', () async {
     await userService.createProfile(
