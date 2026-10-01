@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
-import 'package:real_time_chat_app/data/sample_data.dart';
 import 'package:real_time_chat_app/screens/chat_screen.dart';
+import 'package:real_time_chat_app/services/chat_service.dart';
 import 'package:real_time_chat_app/screens/home_screen.dart';
 import 'package:real_time_chat_app/services/user_service.dart';
 
@@ -11,8 +11,12 @@ import 'package:real_time_chat_app/services/user_service.dart';
 // widget tests, so it is covered separately in profile_tab_test.dart.
 
 void main() {
+  late ChatService chatService;
+
   Future<UserService> pumpHome(WidgetTester tester) async {
-    final userService = UserService(firestore: FakeFirebaseFirestore());
+    final firestore = FakeFirebaseFirestore();
+    final userService = UserService(firestore: firestore);
+    chatService = ChatService(firestore: firestore, userService: userService);
     await userService.createProfile(
       uid: 'me',
       name: 'Current User',
@@ -29,11 +33,21 @@ void main() {
       email: 'priya@example.com',
     );
     await userService.addContact('me', 'maya');
+    await chatService.sendMessage(
+      senderId: 'priya',
+      recipientId: 'me',
+      text: 'Meeting moved to 3pm',
+    );
     await tester.pumpWidget(
       MaterialApp(
-        home: HomeScreen(currentUserId: 'me', userService: userService),
+        home: HomeScreen(
+          currentUserId: 'me',
+          userService: userService,
+          chatService: chatService,
+        ),
       ),
     );
+    await tester.pumpAndSettle();
     return userService;
   }
 
@@ -43,19 +57,35 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Messages'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Search messages'), findsOneWidget);
-    for (final chat in sampleChats) {
-      expect(find.text(chat.name), findsOneWidget);
-    }
+    expect(find.text('Priya Patel'), findsOneWidget);
+    expect(find.text('Meeting moved to 3pm'), findsOneWidget);
   });
 
-  testWidgets('shows unread counts on chats with unread messages', (
+  testWidgets('prefixes the preview when the user sent the last message', (
     tester,
   ) async {
     await pumpHome(tester);
 
-    for (final chat in sampleChats.where((c) => c.unread > 0)) {
-      expect(find.widgetWithText(Badge, '${chat.unread}'), findsOneWidget);
-    }
+    await chatService.sendMessage(
+      senderId: 'me',
+      recipientId: 'priya',
+      text: 'See you then',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You: See you then'), findsOneWidget);
+  });
+
+  testWidgets('search filters the chat list', (tester) async {
+    await pumpHome(tester);
+
+    await tester.enterText(find.byType(TextField), 'nobody');
+    await tester.pump();
+    expect(find.text('Priya Patel'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'meeting');
+    await tester.pump();
+    expect(find.text('Priya Patel'), findsOneWidget);
   });
 
   testWidgets('bottom bar switches to the Contacts tab', (tester) async {
@@ -96,12 +126,12 @@ void main() {
 
   testWidgets('tapping a chat opens that conversation', (tester) async {
     await pumpHome(tester);
-    final chat = sampleChats.first;
-
-    await tester.tap(find.text(chat.name));
+    await tester.tap(find.text('Priya Patel'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ChatScreen), findsOneWidget);
+    final screen = tester.widget<ChatScreen>(find.byType(ChatScreen));
+    expect(screen.otherUser.uid, 'priya');
+    expect(find.text('Meeting moved to 3pm'), findsOneWidget);
     expect(find.text('Type a message'), findsOneWidget);
   });
 
@@ -116,7 +146,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final screen = tester.widget<ChatScreen>(find.byType(ChatScreen));
-    expect(screen.chat.name, sampleChats.first.name);
+    expect(screen.otherUser.name, 'Maya Chen');
+    expect(screen.currentUid, 'me');
   });
 
   testWidgets('Add Contact searches and saves a user under contacts', (

@@ -1,15 +1,25 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-import '../data/sample_data.dart';
+import '../models/app_user.dart';
+import '../models/chat_message.dart';
+import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 
-/// A single conversation. Messages are kept in local state for now; hook
-/// this up to Firestore to make it real time.
+/// A one-to-one conversation with [otherUser], streamed live from Firestore.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.chat});
+  const ChatScreen({
+    super.key,
+    required this.currentUid,
+    required this.otherUser,
+    this.chatService,
+  });
 
-  final SampleChat chat;
+  final String currentUid;
+  final AppUser otherUser;
+  final ChatService? chatService;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -17,11 +27,10 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
-  late final List<({String text, bool isMine})> _messages = [
-    (text: 'Hey! How is the project going?', isMine: false),
-    (text: 'Pretty good, working on the UI right now.', isMine: true),
-    (text: widget.chat.lastMessage, isMine: false),
-  ];
+  late final ChatService _chatService = widget.chatService ?? ChatService();
+  late final Stream<List<ChatMessage>> _messages = _chatService.watchMessages(
+    ChatService.chatIdFor(widget.currentUid, widget.otherUser.uid),
+  );
 
   @override
   void dispose() {
@@ -29,16 +38,32 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _send() {
+  Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    setState(() => _messages.add((text: text, isMine: true)));
     _controller.clear();
+    try {
+      await _chatService.sendMessage(
+        senderId: widget.currentUid,
+        recipientId: widget.otherUser.uid,
+        text: text,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      // Put the text back so the user doesn't lose what they typed.
+      if (_controller.text.isEmpty) _controller.text = text;
+      final reason =
+          error is FirebaseException && error.code == 'permission-denied'
+          ? 'Firestore denied this write. Deploy the latest firestore.rules.'
+          : 'Could not send message.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(reason)));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final chat = widget.chat;
+    final other = widget.otherUser;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.inkRaised,
@@ -46,26 +71,26 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Row(
           children: [
             UserAvatar(
-              initials: chat.initials,
-              color: chat.color,
+              initials: other.initials,
+              color: other.avatarColor,
               radius: 18,
-              isOnline: chat.isOnline,
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(chat.name, style: const TextStyle(fontSize: 16)),
-                Text(
-                  chat.isOnline ? 'Online' : 'Offline',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: chat.isOnline
-                        ? AppColors.online
-                        : AppColors.textMuted,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(other.name, style: const TextStyle(fontSize: 16)),
+                  Text(
+                    other.email,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textMuted,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -77,32 +102,56 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                return Align(
-                  alignment: message.isMine
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
+            child: StreamBuilder<List<ChatMessage>>(
+              stream: _messages,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Could not load messages.'));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final messages = snapshot.data ?? [];
+                if (messages.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'Say hi to ${other.name}!',
+                      style: const TextStyle(color: AppColors.textMuted),
                     ),
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-                    ),
-                    decoration: BoxDecoration(
-                      color: message.isMine
-                          ? AppColors.plum
-                          : AppColors.inkHigh,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Text(message.text),
-                  ),
+                  );
+                }
+
+                // Reversed so the list starts at the bottom and new messages
+                // stay in view as they arrive.
+                return ListView.builder(
+                  reverse: true,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[messages.length - 1 - index];
+                    final isMine = message.senderId == widget.currentUid;
+                    return Align(
+                      alignment: isMine
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.sizeOf(context).width * 0.75,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMine ? AppColors.plum : AppColors.inkHigh,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(message.text),
+                      ),
+                    );
+                  },
                 );
               },
             ),
@@ -119,6 +168,11 @@ class _ChatScreenState extends State<ChatScreen> {
                       controller: _controller,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(
+                          ChatService.maxMessageLength,
+                        ),
+                      ],
                       decoration: InputDecoration(
                         hintText: 'Type a message',
                         filled: true,

@@ -1,12 +1,34 @@
 import 'package:flutter/material.dart';
 
-import '../data/sample_data.dart';
+import '../models/chat_summary.dart';
+import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 import 'chat_screen.dart';
 
-class ChatsTab extends StatelessWidget {
-  const ChatsTab({super.key});
+class ChatsTab extends StatefulWidget {
+  const ChatsTab({super.key, this.currentUid, this.chatService});
+
+  final String? currentUid;
+  final ChatService? chatService;
+
+  @override
+  State<ChatsTab> createState() => _ChatsTabState();
+}
+
+class _ChatsTabState extends State<ChatsTab> {
+  late final ChatService _chatService = widget.chatService ?? ChatService();
+  late final Stream<List<ChatSummary>>? _chats = widget.currentUid == null
+      ? null
+      : _chatService.watchChats(widget.currentUid!);
+  String _query = '';
+
+  bool _matches(ChatSummary chat) {
+    final query = _query.trim().toLowerCase();
+    return query.isEmpty ||
+        chat.otherUser.name.toLowerCase().contains(query) ||
+        chat.lastMessage.toLowerCase().contains(query);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,6 +37,7 @@ class ChatsTab extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
+            onChanged: (value) => setState(() => _query = value),
             decoration: InputDecoration(
               hintText: 'Search messages',
               prefixIcon: const Icon(Icons.search),
@@ -33,60 +56,88 @@ class ChatsTab extends StatelessWidget {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: sampleChats.length,
-            itemBuilder: (context, index) {
-              final chat = sampleChats[index];
-              return ListTile(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 4,
+          child: _chats == null
+              ? const Center(child: Text('Sign in to view your messages.'))
+              : StreamBuilder<List<ChatSummary>>(
+                  stream: _chats,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text('Could not load messages.'),
+                      );
+                    }
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final allChats = snapshot.data ?? [];
+                    if (allChats.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No conversations yet. Message a contact to start one.',
+                        ),
+                      );
+                    }
+
+                    final chats = allChats.where(_matches).toList();
+                    return ListView.builder(
+                      itemCount: chats.length,
+                      itemBuilder: (context, index) =>
+                          _buildChatTile(context, chats[index]),
+                    );
+                  },
                 ),
-                leading: UserAvatar(
-                  initials: chat.initials,
-                  color: chat.color,
-                  isOnline: chat.isOnline,
-                ),
-                title: Text(
-                  chat.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  chat.lastMessage,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textMuted),
-                ),
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      chat.time,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: chat.unread > 0
-                            ? AppColors.gold
-                            : AppColors.textMuted,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    if (chat.unread > 0)
-                      Badge(
-                        label: Text('${chat.unread}'),
-                        backgroundColor: AppColors.gold,
-                        textColor: AppColors.ink,
-                      ),
-                  ],
-                ),
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => ChatScreen(chat: chat)),
-                ),
-              );
-            },
-          ),
         ),
       ],
     );
   }
+
+  Widget _buildChatTile(BuildContext context, ChatSummary chat) {
+    final other = chat.otherUser;
+    final preview = chat.lastSenderId == widget.currentUid
+        ? 'You: ${chat.lastMessage}'
+        : chat.lastMessage;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: UserAvatar(initials: other.initials, color: other.avatarColor),
+      title: Text(
+        other.name,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        preview,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: AppColors.textMuted),
+      ),
+      trailing: Text(
+        _formatTime(chat.updatedAt),
+        style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+      ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ChatScreen(
+            currentUid: widget.currentUid!,
+            otherUser: other,
+            chatService: _chatService,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows the time for today's messages and the date for older ones.
+String _formatTime(DateTime? time) {
+  if (time == null) return '';
+  final local = time.toLocal();
+  final now = DateTime.now();
+  if (local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day) {
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${local.hour < 12 ? 'AM' : 'PM'}';
+  }
+  return '${local.month}/${local.day}/${local.year % 100}';
 }
