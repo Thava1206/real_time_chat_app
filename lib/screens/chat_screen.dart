@@ -66,7 +66,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final other = widget.otherUser;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.inkRaised,
         titleSpacing: 0,
         title: Row(
           children: [
@@ -84,9 +83,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   Text(
                     other.email,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.textMuted,
+                      color: context.surfaces.mutedText,
                     ),
                   ),
                 ],
@@ -117,7 +116,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   return Center(
                     child: Text(
                       'Say hi to ${other.name}!',
-                      style: const TextStyle(color: AppColors.textMuted),
+                      style: TextStyle(color: context.surfaces.mutedText),
                     ),
                   );
                 }
@@ -145,10 +144,22 @@ class _ChatScreenState extends State<ChatScreen> {
                           maxWidth: MediaQuery.sizeOf(context).width * 0.75,
                         ),
                         decoration: BoxDecoration(
-                          color: isMine ? AppColors.plum : AppColors.inkHigh,
+                          color: isMine
+                              ? context.surfaces.sentBubble
+                              : context.surfaces.receivedBubble,
+                          border: Border.all(
+                            color: context.surfaces.glassBorder,
+                          ),
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        child: Text(message.text),
+                        child: Text(
+                          message.text,
+                          style: TextStyle(
+                            color: isMine
+                                ? Colors.white
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
                       ),
                     );
                   },
@@ -159,7 +170,12 @@ class _ChatScreenState extends State<ChatScreen> {
           SafeArea(
             top: false,
             child: Container(
-              color: AppColors.inkRaised,
+              decoration: BoxDecoration(
+                color: context.surfaces.surface,
+                border: Border(
+                  top: BorderSide(color: context.surfaces.glassBorder),
+                ),
+              ),
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
@@ -175,8 +191,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                       decoration: InputDecoration(
                         hintText: 'Type a message',
-                        filled: true,
-                        fillColor: AppColors.inkHigh,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 18,
                         ),
@@ -191,10 +205,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   IconButton.filled(
                     tooltip: 'Send',
                     style: IconButton.styleFrom(
-                      backgroundColor: AppColors.gold,
-                      foregroundColor: AppColors.ink,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      side: context.surfaces.isGlass
+                          ? const BorderSide(
+                              color: Color(0xA6FFF2A8),
+                              width: 1.2,
+                            )
+                          : null,
                     ),
-                    icon: const Icon(Icons.send),
+                    icon: const Icon(Icons.send, shadows: []),
                     onPressed: _send,
                   ),
                 ],

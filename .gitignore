@@ -32,6 +32,9 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+/macos/Runner/Configs/LocalSigning.xcconfig
+/macos/**/xcshareddata/swiftpm/
+/ios/**/xcshareddata/swiftpm/
 
 # Symbolication related
 app.*.symbols

@@ -43,7 +43,10 @@ class UserAvatar extends StatelessWidget {
               decoration: BoxDecoration(
                 color: AppColors.online,
                 shape: BoxShape.circle,
-                border: Border.all(color: AppColors.ink, width: 2),
+                border: Border.all(
+                  color: context.surfaces.background,
+                  width: 2,
+                ),
               ),
             ),
           ),

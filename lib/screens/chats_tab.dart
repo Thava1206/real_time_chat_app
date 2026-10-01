@@ -38,11 +38,14 @@ class _ChatsTabState extends State<ChatsTab> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
             onChanged: (value) => setState(() => _query = value),
+            textInputAction: TextInputAction.search,
+            onSubmitted: (value) {
+              setState(() => _query = value);
+              FocusScope.of(context).unfocus();
+            },
             decoration: InputDecoration(
               hintText: 'Search messages',
               prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: AppColors.inkHigh,
               contentPadding: EdgeInsets.zero,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
@@ -50,7 +53,9 @@ class _ChatsTabState extends State<ChatsTab> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
-                borderSide: const BorderSide(color: AppColors.gold),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ),
           ),
@@ -108,11 +113,11 @@ class _ChatsTabState extends State<ChatsTab> {
         preview,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(color: AppColors.textMuted),
+        style: TextStyle(color: context.surfaces.mutedText),
       ),
       trailing: Text(
         _formatTime(chat.updatedAt),
-        style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+        style: TextStyle(fontSize: 12, color: context.surfaces.mutedText),
       ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
