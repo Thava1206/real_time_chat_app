@@ -12,3 +12,7 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.realTimeChatApp
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+
+// Optional per-developer signing settings. This file is ignored by Git so
+// Apple team and bundle identifiers never conflict between contributors.
+#include? "LocalSigning.xcconfig"

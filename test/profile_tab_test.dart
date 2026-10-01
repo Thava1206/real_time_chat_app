@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:real_time_chat_app/screens/profile_tab.dart';
+import 'package:real_time_chat_app/theme/appearance_controller.dart';
 
 void main() {
   Future<void> pumpProfile(
@@ -9,15 +11,19 @@ void main() {
     VoidCallback? onLogOut,
     Future<void> Function(String name, String bio)? onSaveProfile,
     String bio = '',
+    AppearanceController? appearanceController,
   }) => tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: ProfileTab(
-          name: 'Jane Doe',
-          email: 'jane@example.com',
-          bio: bio,
-          onLogOut: onLogOut ?? () {},
-          onSaveProfile: onSaveProfile,
+    AppearanceScope(
+      controller: appearanceController ?? AppearanceController(),
+      child: MaterialApp(
+        home: Scaffold(
+          body: ProfileTab(
+            name: 'Jane Doe',
+            email: 'jane@example.com',
+            bio: bio,
+            onLogOut: onLogOut ?? () {},
+            onSaveProfile: onSaveProfile,
+          ),
         ),
       ),
     ),
@@ -37,6 +43,21 @@ void main() {
     expect(find.text('Edit profile'), findsOneWidget);
     expect(find.text('Notifications'), findsOneWidget);
     expect(find.text('Privacy'), findsOneWidget);
+    expect(find.text('Appearance'), findsOneWidget);
+  });
+
+  testWidgets('changes the appearance mode', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final controller = AppearanceController();
+    await pumpProfile(tester, appearanceController: controller);
+
+    await tester.tap(find.text('Appearance'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Liquid glass'));
+    await tester.pumpAndSettle();
+
+    expect(controller.appearance, AppAppearance.liquidGlass);
+    expect(find.text('Liquid glass'), findsOneWidget);
   });
 
   testWidgets('tapping log out calls the log out callback', (tester) async {

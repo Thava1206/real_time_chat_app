@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
 import '../services/user_service.dart';
+import '../theme/appearance_controller.dart';
 import '../theme/app_theme.dart';
+import '../widgets/liquid_glass.dart';
 import '../widgets/user_avatar.dart';
 
 class ProfileTab extends StatelessWidget {
@@ -87,12 +89,73 @@ class _ProfileView extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => _EditProfileSheet(user: user, onSave: onSaveProfile!),
+      backgroundColor: Colors.transparent,
+      builder: (_) => LiquidGlassSurface(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        color: context.surfaces.isGlass
+            ? const Color(0xE6333C57)
+            : context.surfaces.surface,
+        child: _EditProfileSheet(user: user, onSave: onSaveProfile!),
+      ),
+    );
+  }
+
+  void _openAppearanceDialog(
+    BuildContext context,
+    AppearanceController controller,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        child: LiquidGlassSurface(
+          color: context.surfaces.isGlass
+              ? const Color(0xE6333C57)
+              : context.surfaces.surface,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 12, 24, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Appearance',
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              ...AppAppearance.values.map((appearance) {
+                final selected = controller.appearance == appearance;
+                return ListTile(
+                  leading: Icon(appearance.icon),
+                  title: Text(appearance.label),
+                  trailing: selected
+                      ? Icon(
+                          Icons.check_circle,
+                          color: Theme.of(dialogContext).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () async {
+                    await controller.setAppearance(appearance);
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop();
+                    }
+                  },
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final appearanceController = AppearanceScope.maybeOf(context);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -115,7 +178,7 @@ class _ProfileView extends StatelessWidget {
         Text(
           user.email,
           textAlign: TextAlign.center,
-          style: const TextStyle(color: AppColors.textMuted),
+          style: TextStyle(color: context.surfaces.mutedText),
         ),
         if (user.bio.isNotEmpty) ...[
           const SizedBox(height: 12),
@@ -130,6 +193,19 @@ class _ProfileView extends StatelessWidget {
           enabled: onSaveProfile != null,
           onTap: () => _openEditSheet(context),
         ),
+        ListTile(
+          leading: const Icon(Icons.palette_outlined),
+          title: const Text('Appearance'),
+          subtitle: Text(
+            appearanceController?.appearance.label ?? 'Dark',
+            style: TextStyle(color: context.surfaces.mutedText),
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          enabled: appearanceController != null,
+          onTap: appearanceController == null
+              ? null
+              : () => _openAppearanceDialog(context, appearanceController),
+        ),
         const ListTile(
           leading: Icon(Icons.notifications_outlined),
           title: Text('Notifications'),
@@ -142,7 +218,11 @@ class _ProfileView extends StatelessWidget {
         ),
         const Divider(),
         ListTile(
-          leading: const Icon(Icons.logout, color: AppColors.terracotta),
+          leading: const Icon(
+            Icons.logout,
+            color: AppColors.terracotta,
+            shadows: [],
+          ),
           title: const Text(
             'Log out',
             style: TextStyle(color: AppColors.terracotta),
@@ -217,13 +297,15 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             if (_errorMessage != null) ...[
               Text(
                 _errorMessage!,
-                style: const TextStyle(color: AppColors.terracotta),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
               const SizedBox(height: 12),
             ],
             TextFormField(
               controller: _nameController,
               textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
               maxLength: 50,
               decoration: const InputDecoration(labelText: 'Name'),
               validator: (value) => (value == null || value.trim().isEmpty)
@@ -236,6 +318,10 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               maxLength: 140,
               maxLines: 3,
               minLines: 1,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) {
+                if (!_isSaving) _save();
+              },
               decoration: const InputDecoration(labelText: 'Bio'),
             ),
             const SizedBox(height: 16),
