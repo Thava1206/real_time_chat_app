@@ -1,18 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
-import '../data/sample_data.dart';
 import '../models/app_user.dart';
+import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 import 'chat_screen.dart';
 
 class ContactsTab extends StatefulWidget {
-  const ContactsTab({super.key, this.currentUid, this.userService});
+  const ContactsTab({
+    super.key,
+    this.currentUid,
+    this.userService,
+    this.chatService,
+  });
 
   final String? currentUid;
   final UserService? userService;
+  final ChatService? chatService;
 
   @override
   State<ContactsTab> createState() => _ContactsTabState();
@@ -97,12 +103,9 @@ class _ContactsTabState extends State<ContactsTab> {
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute(
                                 builder: (_) => ChatScreen(
-                                  chat: SampleChat(
-                                    name: contact.name,
-                                    lastMessage: 'Start a conversation',
-                                    time: '',
-                                    color: contact.avatarColor,
-                                  ),
+                                  currentUid: uid,
+                                  otherUser: contact,
+                                  chatService: widget.chatService,
                                 ),
                               ),
                             ),

@@ -24,5 +24,44 @@ service cloud.firestore {
           && request.resource.data.createdAt == request.time;
       }
     }
+
+    // A chat's id is its two participants' uids, sorted and joined with "_",
+    // so membership can be checked from the path even before the chat exists.
+    function isChatMember(chatId) {
+      return request.auth != null
+        && chatId.split('_').size() == 2
+        && request.auth.uid in chatId.split('_');
+    }
+
+    function isValidText(text) {
+      return text is string && text.size() > 0 && text.size() <= 1000;
+    }
+
+    match /chats/{chatId} {
+      // Checked against the stored participants so the Messages tab can list
+      // chats with an array-contains query.
+      allow read: if request.auth != null
+        && request.auth.uid in resource.data.participants;
+      allow create, update: if isChatMember(chatId)
+        && request.resource.data.keys().hasOnly(
+          ['participants', 'lastMessage', 'lastSenderId', 'updatedAt'])
+        && request.resource.data.participants == chatId.split('_')
+        && request.resource.data.lastSenderId == request.auth.uid
+        && isValidText(request.resource.data.lastMessage)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+
+      // Messages can be sent and read by the two members, but never edited.
+      match /messages/{messageId} {
+        allow read: if isChatMember(chatId);
+        allow create: if isChatMember(chatId)
+          && request.resource.data.keys().hasOnly(
+            ['senderId', 'text', 'createdAt'])
+          && request.resource.data.senderId == request.auth.uid
+          && isValidText(request.resource.data.text)
+          && request.resource.data.createdAt == request.time;
+        allow update, delete: if false;
+      }
+    }
   }
 }
