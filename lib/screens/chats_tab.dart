@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../models/message_search_result.dart';
 import '../models/chat_summary.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
+import '../widgets/message_search_results.dart';
 import 'chat_screen.dart';
 
 class ChatsTab extends StatefulWidget {
@@ -22,12 +26,53 @@ class _ChatsTabState extends State<ChatsTab> {
       ? null
       : _chatService.watchChats(widget.currentUid!);
   String _query = '';
+  MessageSearchScope _scope = MessageSearchScope.all;
+  Future<List<MessageSearchResult>>? _searchResults;
+  Timer? _searchDebounce;
 
-  bool _matches(ChatSummary chat) {
-    final query = _query.trim().toLowerCase();
-    return query.isEmpty ||
-        chat.otherUser.name.toLowerCase().contains(query) ||
-        chat.lastMessage.toLowerCase().contains(query);
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  void _queueSearch(String value) {
+    _searchDebounce?.cancel();
+    setState(() => _query = value);
+    if (value.trim().isEmpty || widget.currentUid == null) {
+      setState(() => _searchResults = null);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), _runSearch);
+  }
+
+  void _runSearch() {
+    if (_query.trim().isEmpty || widget.currentUid == null) return;
+    setState(() {
+      _searchResults = _chatService.searchMessages(
+        uid: widget.currentUid!,
+        query: _query,
+        scope: _scope,
+      );
+    });
+  }
+
+  void _selectScope(MessageSearchScope scope) {
+    setState(() => _scope = scope);
+    _searchDebounce?.cancel();
+    _runSearch();
+  }
+
+  void _openResult(MessageSearchResult result) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          currentUid: widget.currentUid!,
+          otherUser: result.otherUser,
+          chatService: _chatService,
+        ),
+      ),
+    );
   }
 
   @override
@@ -37,10 +82,12 @@ class _ChatsTabState extends State<ChatsTab> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
-            onChanged: (value) => setState(() => _query = value),
+            onChanged: _queueSearch,
             textInputAction: TextInputAction.search,
             onSubmitted: (value) {
+              _searchDebounce?.cancel();
               setState(() => _query = value);
+              _runSearch();
               FocusScope.of(context).unfocus();
             },
             decoration: InputDecoration(
@@ -60,8 +107,35 @@ class _ChatsTabState extends State<ChatsTab> {
             ),
           ),
         ),
+        if (_query.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<MessageSearchScope>(
+                showSelectedIcon: false,
+                segments: MessageSearchScope.values
+                    .map(
+                      (scope) =>
+                          ButtonSegment(value: scope, label: Text(scope.label)),
+                    )
+                    .toList(),
+                selected: {_scope},
+                onSelectionChanged: (selection) =>
+                    _selectScope(selection.single),
+              ),
+            ),
+          ),
         Expanded(
-          child: _chats == null
+          child: _query.trim().isNotEmpty
+              ? _searchResults == null || widget.currentUid == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : MessageSearchResults(
+                        results: _searchResults!,
+                        currentUid: widget.currentUid!,
+                        onSelected: _openResult,
+                      )
+              : _chats == null
               ? const Center(child: Text('Sign in to view your messages.'))
               : StreamBuilder<List<ChatSummary>>(
                   stream: _chats,
@@ -84,11 +158,10 @@ class _ChatsTabState extends State<ChatsTab> {
                       );
                     }
 
-                    final chats = allChats.where(_matches).toList();
                     return ListView.builder(
-                      itemCount: chats.length,
+                      itemCount: allChats.length,
                       itemBuilder: (context, index) =>
-                          _buildChatTile(context, chats[index]),
+                          _buildChatTile(context, allChats[index]),
                     );
                   },
                 ),

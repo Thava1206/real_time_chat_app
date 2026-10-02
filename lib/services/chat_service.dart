@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/chat_message.dart';
 import '../models/chat_summary.dart';
+import '../models/message_search_result.dart';
 import 'user_service.dart';
 
 /// Sends and streams one-to-one messages stored in the `chats` collection.
@@ -76,6 +77,63 @@ class ChatService {
         });
         return chats;
       });
+
+  /// Searches message history across this user's conversations. Filtering is
+  /// performed locally so partial-text matching works without new indexes or
+  /// changes to the stored message schema.
+  Future<List<MessageSearchResult>> searchMessages({
+    required String uid,
+    required String query,
+    MessageSearchScope scope = MessageSearchScope.all,
+  }) async {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return const [];
+
+    final chatSnapshot = await _chats
+        .where('participants', arrayContains: uid)
+        .get();
+    String otherUid(Map<String, dynamic> data) => (data['participants'] as List)
+        .cast<String>()
+        .firstWhere((id) => id != uid, orElse: () => uid);
+    final profiles = await _userService.fetchUsers(
+      chatSnapshot.docs.map((doc) => otherUid(doc.data())).toList(),
+    );
+    final results = <MessageSearchResult>[];
+
+    for (final chat in chatSnapshot.docs) {
+      final otherUser = profiles[otherUid(chat.data())];
+      if (otherUser == null) continue;
+      final messages = await _messages(chat.id).orderBy('createdAt').get();
+      for (final document in messages.docs) {
+        final message = ChatMessage.fromFirestore(document);
+        final isSent = message.senderId == uid;
+        final matchesScope = switch (scope) {
+          MessageSearchScope.all => true,
+          MessageSearchScope.sent => isSent,
+          MessageSearchScope.received => !isSent,
+        };
+        if (matchesScope &&
+            message.text.toLowerCase().contains(normalizedQuery)) {
+          results.add(
+            MessageSearchResult(
+              chatId: chat.id,
+              otherUser: otherUser,
+              message: message,
+            ),
+          );
+        }
+      }
+    }
+
+    results.sort((a, b) {
+      final aTime = a.message.createdAt;
+      final bTime = b.message.createdAt;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return bTime.compareTo(aTime);
+    });
+    return results;
+  }
 
   /// Adds the message and updates the chat's last-message preview together.
   Future<void> sendMessage({
