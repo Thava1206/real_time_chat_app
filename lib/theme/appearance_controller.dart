@@ -18,7 +18,7 @@ extension AppAppearanceLabel on AppAppearance {
 }
 
 class AppearanceController extends ChangeNotifier {
-  AppearanceController({AppAppearance initial = AppAppearance.light})
+  AppearanceController({AppAppearance initial = AppAppearance.dark})
     : _appearance = initial;
 
   static const _preferenceKey = 'app_appearance';
@@ -33,7 +33,7 @@ class AppearanceController extends ChangeNotifier {
     for (final mode in AppAppearance.values) {
       if (mode.name == stored) appearance = mode;
     }
-    return AppearanceController(initial: appearance ?? AppAppearance.light);
+    return AppearanceController(initial: appearance ?? AppAppearance.dark);
   }
 
   Future<void> setAppearance(AppAppearance value) async {

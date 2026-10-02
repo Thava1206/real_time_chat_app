@@ -10,9 +10,6 @@ class UserService {
 
   final FirebaseFirestore _firestore;
 
-  /// The database this service reads from, so related services can share it.
-  FirebaseFirestore get firestore => _firestore;
-
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection('users');
 
@@ -60,19 +57,7 @@ class UserService {
         );
 
         return contacts
-            .map((contact) {
-              final profile = profilesById[contact.uid];
-              if (profile == null) return null;
-              return AppUser(
-                uid: profile.uid,
-                name: contact.displayName ?? profile.name,
-                email: profile.email,
-                avatarColor: profile.avatarColor,
-                bio: contact.note.isNotEmpty ? contact.note : profile.bio,
-                createdAt: profile.createdAt,
-                photo: profile.photo,
-              );
-            })
+            .map((contact) => profilesById[contact.uid])
             .whereType<AppUser>()
             .toList();
       });
@@ -124,29 +109,11 @@ class UserService {
         .set(UserContact(uid: contactUid).toFirestore());
   }
 
-  /// Updates how a contact is shown for this user without changing the
-  /// contact's public account profile.
-  Future<void> updateContact(
-    String uid,
-    String contactUid, {
-    required String displayName,
-    required String note,
-  }) {
-    return _contacts(uid)
-        .doc(contactUid)
-        .update({'displayName': displayName.trim(), 'note': note.trim()});
-  }
-
   Future<void> updateProfile(String uid, {String? name, String? bio}) {
     return _users.doc(uid).update({
       if (name != null) 'name': name.trim(),
       if (name != null) 'nameLower': name.trim().toLowerCase(),
       if (bio != null) 'bio': bio.trim(),
     });
-  }
-
-  /// Sets the base64-encoded profile [photo], or removes it when null.
-  Future<void> updatePhoto(String uid, String? photo) {
-    return _users.doc(uid).update({'photo': photo ?? FieldValue.delete()});
   }
 }

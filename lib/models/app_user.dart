@@ -11,7 +11,6 @@ class AppUser {
     required this.email,
     required this.avatarColor,
     this.bio = '',
-    this.photo,
     this.createdAt,
   });
 
@@ -35,9 +34,6 @@ class AppUser {
   final String email;
   final Color avatarColor;
   final String bio;
-
-  /// Base64-encoded profile photo, or null to show [initials] instead.
-  final String? photo;
   final DateTime? createdAt;
 
   String get initials => name
@@ -58,7 +54,6 @@ class AppUser {
           ? Color(data['avatarColor'] as int)
           : avatarColorFor(doc.id),
       bio: data['bio'] as String? ?? '',
-      photo: data['photo'] as String?,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
     );
   }

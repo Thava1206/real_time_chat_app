@@ -1,8 +1,5 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:image/image.dart' as img;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:real_time_chat_app/screens/profile_tab.dart';
@@ -13,9 +10,7 @@ void main() {
     WidgetTester tester, {
     VoidCallback? onLogOut,
     Future<void> Function(String name, String bio)? onSaveProfile,
-    Future<void> Function(String? photo)? onChangePhoto,
     String bio = '',
-    String? photo,
     AppearanceController? appearanceController,
   }) => tester.pumpWidget(
     AppearanceScope(
@@ -26,10 +21,8 @@ void main() {
             name: 'Jane Doe',
             email: 'jane@example.com',
             bio: bio,
-            photo: photo,
             onLogOut: onLogOut ?? () {},
             onSaveProfile: onSaveProfile,
-            onChangePhoto: onChangePhoto,
           ),
         ),
       ),
@@ -121,24 +114,5 @@ void main() {
 
     expect(find.text('Please enter your name.'), findsOneWidget);
     expect(saved, isFalse);
-  });
-
-  testWidgets('removes the signed-in user profile photo', (tester) async {
-    String? savedPhoto = 'not-called';
-    final photo = base64Encode(img.encodePng(img.Image(width: 4, height: 4)));
-    await pumpProfile(
-      tester,
-      photo: photo,
-      onChangePhoto: (value) async => savedPhoto = value,
-    );
-
-    await tester.tap(find.byTooltip('Change profile photo'));
-    await tester.pumpAndSettle();
-    expect(find.text('Remove photo'), findsOneWidget);
-
-    await tester.tap(find.text('Remove photo'));
-    await tester.pumpAndSettle();
-
-    expect(savedPhoto, isNull);
   });
 }

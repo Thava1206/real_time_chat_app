@@ -1,25 +1,19 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
-import 'base64_image.dart';
 
-/// Circle avatar showing the profile photo, or initials when there isn't one,
-/// with an optional green "online" dot.
+/// Circle avatar showing initials, with an optional green "online" dot.
 class UserAvatar extends StatelessWidget {
   const UserAvatar({
     super.key,
     required this.initials,
     required this.color,
-    this.photo,
     this.radius = 24,
     this.isOnline = false,
   });
 
   final String initials;
   final Color color;
-
-  /// Base64-encoded photo, shown in place of [initials] when set.
-  final String? photo;
   final double radius;
   final bool isOnline;
 
@@ -30,17 +24,14 @@ class UserAvatar extends StatelessWidget {
         CircleAvatar(
           radius: radius,
           backgroundColor: color,
-          backgroundImage: photo == null ? null : base64Image(photo!),
-          child: photo == null
-              ? Text(
-                  initials,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: radius * 0.7,
-                  ),
-                )
-              : null,
+          child: Text(
+            initials,
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: radius * 0.7,
+            ),
+          ),
         ),
         if (isOnline)
           Positioned(

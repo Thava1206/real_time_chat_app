@@ -36,7 +36,6 @@ class MyApp extends StatelessWidget {
           };
           return MaterialApp(
             title: 'Real Time Chat',
-            debugShowCheckedModeBanner: false,
             theme: theme,
             themeAnimationDuration: const Duration(milliseconds: 450),
             themeAnimationCurve: Curves.easeOutCubic,

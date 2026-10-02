@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
 import '../services/auth_service.dart';
-import '../services/image_service.dart';
 import '../services/user_service.dart';
 import '../theme/appearance_controller.dart';
 import '../theme/app_theme.dart';
 import '../widgets/liquid_glass.dart';
-import '../widgets/photo_source_sheet.dart';
 import '../widgets/user_avatar.dart';
 
 class ProfileTab extends StatelessWidget {
@@ -18,21 +16,15 @@ class ProfileTab extends StatelessWidget {
     this.name,
     this.email,
     this.bio = '',
-    this.photo,
     this.onLogOut,
     this.onSaveProfile,
-    this.onChangePhoto,
   });
 
   final String? name;
   final String? email;
   final String bio;
-  final String? photo;
   final VoidCallback? onLogOut;
   final Future<void> Function(String name, String bio)? onSaveProfile;
-
-  /// Saves a new base64 photo, or removes it when passed null.
-  final Future<void> Function(String? photo)? onChangePhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -43,12 +35,10 @@ class ProfileTab extends StatelessWidget {
           name: name!,
           email: email!,
           bio: bio,
-          photo: photo,
           avatarColor: AppColors.plum,
         ),
         onLogOut: onLogOut!,
         onSaveProfile: onSaveProfile,
-        onChangePhoto: onChangePhoto,
       );
     }
 
@@ -78,65 +68,22 @@ class ProfileTab extends StatelessWidget {
           onSaveProfile: snapshot.hasData
               ? (name, bio) => authService.updateProfile(name: name, bio: bio)
               : null,
-          onChangePhoto: snapshot.hasData ? authService.updatePhoto : null,
         );
       },
     );
   }
 }
 
-class _ProfileView extends StatefulWidget {
+class _ProfileView extends StatelessWidget {
   const _ProfileView({
     required this.user,
     required this.onLogOut,
     this.onSaveProfile,
-    this.onChangePhoto,
   });
 
   final AppUser user;
   final VoidCallback onLogOut;
   final Future<void> Function(String name, String bio)? onSaveProfile;
-  final Future<void> Function(String? photo)? onChangePhoto;
-
-  @override
-  State<_ProfileView> createState() => _ProfileViewState();
-}
-
-class _ProfileViewState extends State<_ProfileView> {
-  final _imageService = ImageService();
-  bool _isSavingPhoto = false;
-
-  AppUser get user => widget.user;
-
-  Future<void> _changePhoto() async {
-    final action = await showPhotoSourceSheet(
-      context,
-      canRemove: user.photo != null,
-    );
-    if (action == null || !mounted) return;
-
-    setState(() => _isSavingPhoto = true);
-    try {
-      final source = action.source;
-      if (source == null) {
-        await widget.onChangePhoto!(null);
-      } else {
-        final photo = await _imageService.pickProfilePhoto(source);
-        if (photo != null) await widget.onChangePhoto!(photo);
-      }
-    } catch (error) {
-      if (!mounted) return;
-      final message = switch (error) {
-        AuthException(:final message) => message,
-        FormatException() => 'That file is not a supported image.',
-        _ => 'Could not update your photo.',
-      };
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
-    } finally {
-      if (mounted) setState(() => _isSavingPhoto = false);
-    }
-  }
 
   void _openEditSheet(BuildContext context) {
     showModalBottomSheet<void>(
@@ -148,7 +95,7 @@ class _ProfileViewState extends State<_ProfileView> {
         color: context.surfaces.isGlass
             ? const Color(0xE6333C57)
             : context.surfaces.surface,
-        child: _EditProfileSheet(user: user, onSave: widget.onSaveProfile!),
+        child: _EditProfileSheet(user: user, onSave: onSaveProfile!),
       ),
     );
   }
@@ -213,7 +160,13 @@ class _ProfileViewState extends State<_ProfileView> {
       padding: const EdgeInsets.all(16),
       children: [
         const SizedBox(height: 16),
-        Center(child: _buildAvatar(context)),
+        Center(
+          child: UserAvatar(
+            initials: user.initials,
+            color: user.avatarColor,
+            radius: 48,
+          ),
+        ),
         const SizedBox(height: 16),
         Text(
           user.name,
@@ -237,14 +190,14 @@ class _ProfileViewState extends State<_ProfileView> {
           leading: const Icon(Icons.edit_outlined),
           title: const Text('Edit profile'),
           trailing: const Icon(Icons.chevron_right),
-          enabled: widget.onSaveProfile != null,
+          enabled: onSaveProfile != null,
           onTap: () => _openEditSheet(context),
         ),
         ListTile(
           leading: const Icon(Icons.palette_outlined),
           title: const Text('Appearance'),
           subtitle: Text(
-            appearanceController?.appearance.label ?? 'Light',
+            appearanceController?.appearance.label ?? 'Dark',
             style: TextStyle(color: context.surfaces.mutedText),
           ),
           trailing: const Icon(Icons.chevron_right),
@@ -274,60 +227,9 @@ class _ProfileViewState extends State<_ProfileView> {
             'Log out',
             style: TextStyle(color: AppColors.terracotta),
           ),
-          onTap: widget.onLogOut,
+          onTap: onLogOut,
         ),
       ],
-    );
-  }
-
-  Widget _buildAvatar(BuildContext context) {
-    final avatar = UserAvatar(
-      initials: user.initials,
-      color: user.avatarColor,
-      photo: user.photo,
-      radius: 48,
-    );
-    if (widget.onChangePhoto == null) return avatar;
-
-    final colors = Theme.of(context).colorScheme;
-    return Tooltip(
-      message: 'Change profile photo',
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: _isSavingPhoto ? null : _changePhoto,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            avatar,
-            if (_isSavingPhoto)
-              const SizedBox.square(
-                dimension: 96,
-                child: CircularProgressIndicator(strokeWidth: 3),
-              ),
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: colors.primary,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: context.surfaces.background,
-                    width: 2,
-                  ),
-                ),
-                child: Icon(
-                  Icons.photo_camera,
-                  size: 16,
-                  color: colors.onPrimary,
-                  shadows: const [],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
