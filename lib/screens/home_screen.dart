@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
@@ -51,12 +52,27 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _titles[_currentIndex],
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        title: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: buildFadeThroughTransition,
+          child: Text(
+            _titles[_currentIndex],
+            key: ValueKey(_currentIndex),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
         ),
       ),
-      body: _buildTab(),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 340),
+        transitionBuilder: buildFadeThroughTransition,
+        layoutBuilder: (currentChild, previousChildren) => ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [...previousChildren, ?currentChild],
+          ),
+        ),
+        child: KeyedSubtree(key: ValueKey(_currentIndex), child: _buildTab()),
+      ),
       floatingActionButton: _currentIndex == 0
           ? DecoratedBox(
               decoration: BoxDecoration(
