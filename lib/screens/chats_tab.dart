@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-import '../models/conversation.dart';
+import '../models/message_search_result.dart';
+import '../models/chat_summary.dart';
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
+import '../widgets/message_search_results.dart';
 import 'chat_screen.dart';
 
 class ChatsTab extends StatefulWidget {
@@ -18,104 +23,76 @@ class ChatsTab extends StatefulWidget {
 
 class _ChatsTabState extends State<ChatsTab> {
   late final ChatService _chatService = widget.chatService ?? ChatService();
-  late final Stream<List<ConversationPreview>>? _conversations =
-      widget.currentUid == null
+  late final Stream<List<ChatSummary>>? _chats = widget.currentUid == null
       ? null
-      : _chatService.watchConversations(widget.currentUid!);
+      : _chatService.watchChats(widget.currentUid!);
+  String _query = '';
+  MessageSearchScope _scope = MessageSearchScope.all;
+  Future<List<MessageSearchResult>>? _searchResults;
+  Timer? _searchDebounce;
 
-  static String _formatTime(DateTime? time) {
-    if (time == null) return '';
-    final local = time.toLocal();
-    final now = DateTime.now();
-    if (local.year == now.year &&
-        local.month == now.month &&
-        local.day == now.day) {
-      final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
-      final minute = local.minute.toString().padLeft(2, '0');
-      return '$hour:$minute ${local.hour < 12 ? 'AM' : 'PM'}';
-    }
-    return '${local.month}/${local.day}/${local.year % 100}';
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    super.dispose();
   }
 
-  Widget _buildList(String uid) {
-    return StreamBuilder<List<ConversationPreview>>(
-      stream: _conversations,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const Center(child: Text('Could not load conversations.'));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+  void _queueSearch(String value) {
+    _searchDebounce?.cancel();
+    setState(() => _query = value);
+    if (value.trim().isEmpty || widget.currentUid == null) {
+      setState(() => _searchResults = null);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), _runSearch);
+  }
 
-        final previews = snapshot.data ?? [];
-        if (previews.isEmpty) {
-          return const Center(
-            child: Text('No conversations yet. Message a contact to start.'),
-          );
-        }
+  void _runSearch() {
+    if (_query.trim().isEmpty || widget.currentUid == null) return;
+    setState(() {
+      _searchResults = _chatService.searchMessages(
+        uid: widget.currentUid!,
+        query: _query,
+        scope: _scope,
+      );
+    });
+  }
 
-        return ListView.builder(
-          itemCount: previews.length,
-          itemBuilder: (context, index) {
-            final conversation = previews[index].conversation;
-            final other = previews[index].other;
-            final prefix = conversation.lastSenderId == uid ? 'You: ' : '';
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 4,
-              ),
-              leading: UserAvatar(
-                initials: other.initials,
-                color: other.avatarColor,
-              ),
-              title: Text(
-                other.name,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(
-                '$prefix${conversation.lastMessage}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppColors.textMuted),
-              ),
-              trailing: Text(
-                _formatTime(conversation.updatedAt),
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textMuted,
-                ),
-              ),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => ChatScreen(
-                    currentUid: uid,
-                    other: other,
-                    chatService: widget.chatService,
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
+  void _selectScope(MessageSearchScope scope) {
+    setState(() => _scope = scope);
+    _searchDebounce?.cancel();
+    _runSearch();
+  }
+
+  void _openResult(MessageSearchResult result) {
+    pushAppPage<void>(
+      context,
+      (_) => ChatScreen(
+        currentUid: widget.currentUid!,
+        otherUser: result.otherUser,
+        chatService: _chatService,
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final uid = widget.currentUid;
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
+            onChanged: _queueSearch,
+            textInputAction: TextInputAction.search,
+            onSubmitted: (value) {
+              _searchDebounce?.cancel();
+              setState(() => _query = value);
+              _runSearch();
+              FocusScope.of(context).unfocus();
+            },
             decoration: InputDecoration(
               hintText: 'Search messages',
               prefixIcon: const Icon(Icons.search),
-              filled: true,
-              fillColor: AppColors.inkHigh,
               contentPadding: EdgeInsets.zero,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
@@ -123,17 +100,121 @@ class _ChatsTabState extends State<ChatsTab> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(24),
-                borderSide: const BorderSide(color: AppColors.gold),
+                borderSide: BorderSide(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
               ),
             ),
           ),
         ),
+        if (_query.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: SegmentedButton<MessageSearchScope>(
+                showSelectedIcon: false,
+                segments: MessageSearchScope.values
+                    .map(
+                      (scope) =>
+                          ButtonSegment(value: scope, label: Text(scope.label)),
+                    )
+                    .toList(),
+                selected: {_scope},
+                onSelectionChanged: (selection) =>
+                    _selectScope(selection.single),
+              ),
+            ),
+          ),
         Expanded(
-          child: uid == null
+          child: _query.trim().isNotEmpty
+              ? _searchResults == null || widget.currentUid == null
+                    ? const Center(child: CircularProgressIndicator())
+                    : MessageSearchResults(
+                        results: _searchResults!,
+                        currentUid: widget.currentUid!,
+                        onSelected: _openResult,
+                      )
+              : _chats == null
               ? const Center(child: Text('Sign in to view your messages.'))
-              : _buildList(uid),
+              : StreamBuilder<List<ChatSummary>>(
+                  stream: _chats,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text('Could not load messages.'),
+                      );
+                    }
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    final allChats = snapshot.data ?? [];
+                    if (allChats.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'No conversations yet. Message a contact to start one.',
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      itemCount: allChats.length,
+                      itemBuilder: (context, index) =>
+                          _buildChatTile(context, allChats[index]),
+                    );
+                  },
+                ),
         ),
       ],
     );
   }
+
+  Widget _buildChatTile(BuildContext context, ChatSummary chat) {
+    final other = chat.otherUser;
+    final preview = chat.lastSenderId == widget.currentUid
+        ? 'You: ${chat.lastMessage}'
+        : chat.lastMessage;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: UserAvatar(initials: other.initials, color: other.avatarColor),
+      title: Text(
+        other.name,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      subtitle: Text(
+        preview,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(color: context.surfaces.mutedText),
+      ),
+      trailing: Text(
+        _formatTime(chat.updatedAt),
+        style: TextStyle(fontSize: 12, color: context.surfaces.mutedText),
+      ),
+      onTap: () => pushAppPage<void>(
+        context,
+        (_) => ChatScreen(
+          currentUid: widget.currentUid!,
+          otherUser: other,
+          chatService: _chatService,
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows the time for today's messages and the date for older ones.
+String _formatTime(DateTime? time) {
+  if (time == null) return '';
+  final local = time.toLocal();
+  final now = DateTime.now();
+  if (local.year == now.year &&
+      local.month == now.month &&
+      local.day == now.day) {
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$hour:$minute ${local.hour < 12 ? 'AM' : 'PM'}';
+  }
+  return '${local.month}/${local.day}/${local.year % 100}';
 }

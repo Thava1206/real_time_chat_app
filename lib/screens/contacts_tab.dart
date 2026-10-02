@@ -2,9 +2,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/liquid_glass.dart';
 import '../widgets/user_avatar.dart';
 import 'chat_screen.dart';
 
@@ -92,21 +94,20 @@ class _ContactsTabState extends State<ContactsTab> {
                                 : contact.email,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(color: AppColors.textMuted),
+                            style: TextStyle(color: context.surfaces.mutedText),
                           ),
                           trailing: IconButton(
                             tooltip: 'Message',
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.chat_bubble_outline,
-                              color: AppColors.gold,
+                              color: Theme.of(context).colorScheme.primary,
                             ),
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  currentUid: uid,
-                                  other: contact,
-                                  chatService: widget.chatService,
-                                ),
+                            onPressed: () => pushAppPage<void>(
+                              context,
+                              (_) => ChatScreen(
+                                currentUid: uid,
+                                otherUser: contact,
+                                chatService: widget.chatService,
                               ),
                             ),
                           ),
@@ -193,101 +194,121 @@ class _AddContactDialogState extends State<_AddContactDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Add contact'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: LiquidGlassSurface(
+        color: context.surfaces.isGlass
+            ? const Color(0xE6333C57)
+            : context.surfaces.surface,
+        child: AlertDialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          insetPadding: EdgeInsets.zero,
+          title: const Text('Add contact'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: TextField(
-                    controller: _queryController,
-                    autofocus: true,
-                    textInputAction: TextInputAction.search,
-                    onChanged: (_) => setState(() {}),
-                    onSubmitted: (_) => _search(),
-                    decoration: const InputDecoration(
-                      labelText: 'Search by email',
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _queryController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onChanged: (_) => setState(() {}),
+                        onSubmitted: (_) => _search(),
+                        decoration: const InputDecoration(
+                          labelText: 'Search by email',
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Search users',
+                      onPressed:
+                          _isSearching || _queryController.text.trim().isEmpty
+                          ? null
+                          : _search,
+                      icon: const Icon(Icons.search),
+                    ),
+                  ],
+                ),
+                if (_isSearching) ...[
+                  const SizedBox(height: 12),
+                  const LinearProgressIndicator(),
+                ],
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    _errorMessage!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Search users',
-                  onPressed:
-                      _isSearching || _queryController.text.trim().isEmpty
-                      ? null
-                      : _search,
-                  icon: const Icon(Icons.search),
-                ),
+                ],
+                if (_hasSearched &&
+                    !_isSearching &&
+                    _results.isEmpty &&
+                    _errorMessage == null) ...[
+                  const SizedBox(height: 16),
+                  const Text('No users found.'),
+                ],
+                if (_results.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 240,
+                    child: ListView.builder(
+                      itemCount: _results.length,
+                      itemBuilder: (context, index) {
+                        final user = _results[index];
+                        final isAdded = _addedIds.contains(user.uid);
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: UserAvatar(
+                            initials: user.initials,
+                            color: user.avatarColor,
+                            radius: 18,
+                          ),
+                          title: Text(user.name),
+                          trailing: isAdded
+                              ? const Icon(
+                                  Icons.check,
+                                  color: AppColors.online,
+                                  shadows: [],
+                                )
+                              : _addingUid == user.uid
+                              ? const SizedBox.square(
+                                  dimension: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : IconButton(
+                                  tooltip: 'Add ${user.name}',
+                                  onPressed: _addingUid == null
+                                      ? () => _add(user)
+                                      : null,
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ],
             ),
-            if (_isSearching) ...[
-              const SizedBox(height: 12),
-              const LinearProgressIndicator(),
-            ],
-            if (_errorMessage != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                _errorMessage!,
-                style: const TextStyle(color: AppColors.terracotta),
-              ),
-            ],
-            if (_hasSearched &&
-                !_isSearching &&
-                _results.isEmpty &&
-                _errorMessage == null) ...[
-              const SizedBox(height: 16),
-              const Text('No users found.'),
-            ],
-            if (_results.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 240,
-                child: ListView.builder(
-                  itemCount: _results.length,
-                  itemBuilder: (context, index) {
-                    final user = _results[index];
-                    final isAdded = _addedIds.contains(user.uid);
-                    return ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: UserAvatar(
-                        initials: user.initials,
-                        color: user.avatarColor,
-                        radius: 18,
-                      ),
-                      title: Text(user.name),
-                      trailing: isAdded
-                          ? const Icon(Icons.check, color: AppColors.online)
-                          : _addingUid == user.uid
-                          ? const SizedBox.square(
-                              dimension: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : IconButton(
-                              tooltip: 'Add ${user.name}',
-                              onPressed: _addingUid == null
-                                  ? () => _add(user)
-                                  : null,
-                              icon: const Icon(Icons.person_add_alt_1),
-                            ),
-                    );
-                  },
-                ),
-              ),
-            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Done'),
+            ),
           ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Done'),
-        ),
-      ],
     );
   }
 }

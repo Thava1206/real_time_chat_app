@@ -1,88 +1,172 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import '../models/app_user.dart';
-import '../models/conversation.dart';
+import '../models/chat_message.dart';
+import '../models/chat_summary.dart';
+import '../models/message_search_result.dart';
+import 'user_service.dart';
 
-/// Reads and writes conversations in the `conversations` Firestore collection.
+/// Sends and streams one-to-one messages stored in the `chats` collection.
+///
+/// Each conversation lives at `chats/{chatId}`, where the id is both user ids
+/// sorted and joined with `_`, so either participant opens the same chat.
 class ChatService {
-  ChatService({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  ChatService({FirebaseFirestore? firestore, UserService? userService})
+    : _firestore = firestore ?? FirebaseFirestore.instance,
+      _userService = userService ?? UserService(firestore: firestore);
+
+  /// Longest message the Firestore rules accept.
+  static const maxMessageLength = 1000;
 
   final FirebaseFirestore _firestore;
+  final UserService _userService;
 
-  CollectionReference<Map<String, dynamic>> get _conversations =>
-      _firestore.collection('conversations');
+  CollectionReference<Map<String, dynamic>> get _chats =>
+      _firestore.collection('chats');
 
-  /// Same id for both users so a pair of people only ever has one conversation.
-  static String conversationId(String a, String b) {
-    final sorted = [a, b]..sort();
-    return sorted.join('_');
-  }
+  CollectionReference<Map<String, dynamic>> _messages(String chatId) =>
+      _chats.doc(chatId).collection('messages');
 
-  /// Emits the user's conversations, newest first, with the other person's
-  /// profile attached. Conversations whose other user is missing are skipped.
-  Stream<List<ConversationPreview>> watchConversations(String uid) =>
-      _conversations
-          .where('participants', arrayContains: uid)
-          .snapshots()
-          .asyncMap((snapshot) async {
-            final conversations = snapshot.docs
-                .map(Conversation.fromFirestore)
-                .toList();
-            conversations.sort(
-              (a, b) => (b.updatedAt ?? DateTime.now()).compareTo(
-                a.updatedAt ?? DateTime.now(),
-              ),
+  static String chatIdFor(String uid, String otherUid) =>
+      _participants(uid, otherUid).join('_');
+
+  static List<String> _participants(String uid, String otherUid) =>
+      [uid, otherUid]..sort();
+
+  /// Emits the conversation's messages, oldest first, whenever they change.
+  Stream<List<ChatMessage>> watchMessages(String chatId) => _messages(chatId)
+      .orderBy('createdAt')
+      .snapshots()
+      .map((snapshot) => snapshot.docs.map(ChatMessage.fromFirestore).toList());
+
+  /// Emits the user's conversations, most recently active first.
+  Stream<List<ChatSummary>> watchChats(String uid) => _chats
+      .where('participants', arrayContains: uid)
+      .snapshots()
+      .asyncMap((snapshot) async {
+        String otherUid(Map<String, dynamic> data) =>
+            (data['participants'] as List).cast<String>().firstWhere(
+              (id) => id != uid,
+              orElse: () => uid,
             );
 
-            final previews = <ConversationPreview>[];
-            for (final conversation in conversations) {
-              final otherDoc = await _firestore
-                  .collection('users')
-                  .doc(conversation.otherUid(uid))
-                  .get();
-              if (!otherDoc.exists) continue;
-              previews.add(
-                ConversationPreview(
-                  conversation: conversation,
-                  other: AppUser.fromFirestore(otherDoc),
-                ),
-              );
-            }
-            return previews;
-          });
+        final profiles = await _userService.fetchUsers(
+          snapshot.docs.map((doc) => otherUid(doc.data())).toList(),
+        );
 
-  Stream<List<ChatMessage>> watchMessages(String conversationId) =>
-      _conversations
-          .doc(conversationId)
-          .collection('messages')
-          .orderBy('createdAt')
-          .snapshots()
-          .map((s) => s.docs.map(ChatMessage.fromFirestore).toList());
+        final chats = <ChatSummary>[];
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final otherUser = profiles[otherUid(data)];
+          if (otherUser == null) continue;
+          chats.add(
+            ChatSummary(
+              chatId: doc.id,
+              otherUser: otherUser,
+              lastMessage: data['lastMessage'] as String? ?? '',
+              lastSenderId: data['lastSenderId'] as String? ?? '',
+              updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+            ),
+          );
+        }
+        // Sorted here rather than in the query to avoid needing a composite
+        // index. A just-sent chat has no server time yet, so it goes first.
+        chats.sort((a, b) {
+          if (a.updatedAt == null) return -1;
+          if (b.updatedAt == null) return 1;
+          return b.updatedAt!.compareTo(a.updatedAt!);
+        });
+        return chats;
+      });
 
-  /// Adds the message and updates the conversation summary, creating the
-  /// conversation on first use.
+  /// Searches message history across this user's conversations. Filtering is
+  /// performed locally so partial-text matching works without new indexes or
+  /// changes to the stored message schema.
+  Future<List<MessageSearchResult>> searchMessages({
+    required String uid,
+    required String query,
+    MessageSearchScope scope = MessageSearchScope.all,
+  }) async {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) return const [];
+
+    final chatSnapshot = await _chats
+        .where('participants', arrayContains: uid)
+        .get();
+    String otherUid(Map<String, dynamic> data) => (data['participants'] as List)
+        .cast<String>()
+        .firstWhere((id) => id != uid, orElse: () => uid);
+    final profiles = await _userService.fetchUsers(
+      chatSnapshot.docs.map((doc) => otherUid(doc.data())).toList(),
+    );
+    final results = <MessageSearchResult>[];
+
+    for (final chat in chatSnapshot.docs) {
+      final otherUser = profiles[otherUid(chat.data())];
+      if (otherUser == null) continue;
+      final messages = await _messages(chat.id).orderBy('createdAt').get();
+      for (final document in messages.docs) {
+        final message = ChatMessage.fromFirestore(document);
+        final isSent = message.senderId == uid;
+        final matchesScope = switch (scope) {
+          MessageSearchScope.all => true,
+          MessageSearchScope.sent => isSent,
+          MessageSearchScope.received => !isSent,
+        };
+        if (matchesScope &&
+            message.text.toLowerCase().contains(normalizedQuery)) {
+          results.add(
+            MessageSearchResult(
+              chatId: chat.id,
+              otherUser: otherUser,
+              message: message,
+            ),
+          );
+        }
+      }
+    }
+
+    results.sort((a, b) {
+      final aTime = a.message.createdAt;
+      final bTime = b.message.createdAt;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return bTime.compareTo(aTime);
+    });
+    return results;
+  }
+
+  /// Adds the message and updates the chat's last-message preview together.
   Future<void> sendMessage({
     required String senderId,
     required String recipientId,
     required String text,
-  }) async {
+  }) {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(text, 'text', 'Message is empty');
+    }
+    if (trimmed.length > maxMessageLength) {
+      throw ArgumentError.value(text, 'text', 'Message is too long');
+    }
+    if (senderId == recipientId) {
+      throw ArgumentError.value(
+        recipientId,
+        'recipientId',
+        'Cannot message self',
+      );
+    }
 
-    final ref = _conversations.doc(conversationId(senderId, recipientId));
-    final batch = _firestore.batch();
-    batch.set(ref, {
-      'participants': [senderId, recipientId],
-      'lastMessage': trimmed,
-      'lastSenderId': senderId,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
-    batch.set(ref.collection('messages').doc(), {
-      'senderId': senderId,
-      'text': trimmed,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    await batch.commit();
+    final chatId = chatIdFor(senderId, recipientId);
+    final message = ChatMessage(id: '', senderId: senderId, text: trimmed);
+
+    return (_firestore.batch()
+          ..set(_messages(chatId).doc(), message.toFirestore())
+          ..set(_chats.doc(chatId), {
+            'participants': _participants(senderId, recipientId),
+            'lastMessage': trimmed,
+            'lastSenderId': senderId,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }))
+        .commit();
   }
 }

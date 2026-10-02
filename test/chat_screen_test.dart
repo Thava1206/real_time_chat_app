@@ -15,20 +15,19 @@ void main() {
     avatarColor: AppColors.plum,
   );
 
-  late FakeFirebaseFirestore firestore;
   late ChatService chatService;
 
-  setUp(() {
-    firestore = FakeFirebaseFirestore();
-    chatService = ChatService(firestore: firestore);
-  });
+  setUp(() => chatService = ChatService(firestore: FakeFirebaseFirestore()));
+
+  Finder messageBubbles() =>
+      find.descendant(of: find.byType(ListView), matching: find.byType(Text));
 
   Future<void> pumpChat(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: ChatScreen(
           currentUid: 'me',
-          other: maya,
+          otherUser: maya,
           chatService: chatService,
         ),
       ),
@@ -36,41 +35,64 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows the contact name', (tester) async {
+  Future<void> sendFromUi(WidgetTester tester, String text) async {
+    await tester.enterText(find.byType(TextField), text);
+    await tester.tap(find.byTooltip('Send'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('shows the contact name and email', (tester) async {
     await pumpChat(tester);
 
     expect(find.widgetWithText(AppBar, 'Maya Chen'), findsOneWidget);
+    expect(find.widgetWithText(AppBar, 'maya@example.com'), findsOneWidget);
   });
 
-  testWidgets('shows stored messages', (tester) async {
+  testWidgets('shows a prompt when there are no messages yet', (tester) async {
+    await pumpChat(tester);
+
+    expect(find.text('Say hi to Maya Chen!'), findsOneWidget);
+  });
+
+  testWidgets('shows messages already stored in Firestore', (tester) async {
     await chatService.sendMessage(
       senderId: 'maya',
       recipientId: 'me',
-      text: 'Stored hello',
+      text: 'Are you there?',
     );
     await pumpChat(tester);
 
-    expect(find.text('Stored hello'), findsOneWidget);
+    expect(find.text('Are you there?'), findsOneWidget);
   });
 
-  testWidgets('send button stores the message and clears the input', (
+  testWidgets('send button saves the message and clears the input', (
     tester,
   ) async {
     await pumpChat(tester);
 
-    await tester.enterText(find.byType(TextField), 'Hello from the test');
-    await tester.tap(find.byTooltip('Send'));
-    await tester.pumpAndSettle();
+    await sendFromUi(tester, 'Hello from the test');
 
     expect(find.text('Hello from the test'), findsOneWidget);
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.controller!.text, isEmpty);
+    final messages = await chatService
+        .watchMessages(ChatService.chatIdFor('me', 'maya'))
+        .first;
+    expect(messages.single.text, 'Hello from the test');
+    expect(messages.single.senderId, 'me');
+  });
 
-    final conversation = await firestore
-        .collection('conversations')
-        .doc(ChatService.conversationId('me', 'maya'))
-        .get();
-    expect(conversation.data()!['lastMessage'], 'Hello from the test');
+  testWidgets('messages from the other user appear live', (tester) async {
+    await pumpChat(tester);
+
+    await chatService.sendMessage(
+      senderId: 'maya',
+      recipientId: 'me',
+      text: 'Just replied',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Just replied'), findsOneWidget);
   });
 
   testWidgets('pressing enter on the keyboard sends the message', (
@@ -85,23 +107,20 @@ void main() {
     expect(find.text('Sent with enter'), findsOneWidget);
   });
 
-  testWidgets('blank messages are not stored', (tester) async {
+  testWidgets('blank messages are not sent', (tester) async {
     await pumpChat(tester);
+    await sendFromUi(tester, 'First');
+    final bubbleCount = messageBubbles().evaluate().length;
 
-    await tester.enterText(find.byType(TextField), '   ');
-    await tester.tap(find.byTooltip('Send'));
-    await tester.pumpAndSettle();
+    await sendFromUi(tester, '   ');
 
-    final conversations = await firestore.collection('conversations').get();
-    expect(conversations.docs, isEmpty);
+    expect(messageBubbles().evaluate().length, bubbleCount);
   });
 
   testWidgets('sent messages are trimmed', (tester) async {
     await pumpChat(tester);
 
-    await tester.enterText(find.byType(TextField), '  padded  ');
-    await tester.tap(find.byTooltip('Send'));
-    await tester.pumpAndSettle();
+    await sendFromUi(tester, '  padded  ');
 
     expect(find.text('padded'), findsOneWidget);
   });

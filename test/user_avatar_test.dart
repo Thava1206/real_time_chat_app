@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:real_time_chat_app/models/app_user.dart';
 import 'package:real_time_chat_app/theme/app_theme.dart';
 import 'package:real_time_chat_app/widgets/user_avatar.dart';
 
@@ -35,5 +36,23 @@ void main() {
 
     await pumpAvatar(tester, isOnline: false);
     expect(onlineDot(), findsNothing);
+  });
+
+  test('AppUser builds initials from the first two words', () {
+    const user = AppUser(
+      uid: 'u1',
+      name: 'Maya Chen',
+      email: '',
+      avatarColor: AppColors.plum,
+    );
+    const longName = AppUser(
+      uid: 'u2',
+      name: 'Maya Lin Chen',
+      email: '',
+      avatarColor: AppColors.plum,
+    );
+
+    expect(user.initials, 'MC');
+    expect(longName.initials, 'ML');
   });
 }

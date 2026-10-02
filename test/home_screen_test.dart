@@ -3,21 +3,20 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 
 import 'package:real_time_chat_app/screens/chat_screen.dart';
-import 'package:real_time_chat_app/screens/home_screen.dart';
 import 'package:real_time_chat_app/services/chat_service.dart';
+import 'package:real_time_chat_app/screens/home_screen.dart';
 import 'package:real_time_chat_app/services/user_service.dart';
 
 // The Profile tab reads the signed-in Firebase user, which isn't available in
 // widget tests, so it is covered separately in profile_tab_test.dart.
 
 void main() {
-  Future<UserService> pumpHome(
-    WidgetTester tester, {
-    bool withConversation = false,
-  }) async {
+  late ChatService chatService;
+
+  Future<UserService> pumpHome(WidgetTester tester) async {
     final firestore = FakeFirebaseFirestore();
     final userService = UserService(firestore: firestore);
-    final chatService = ChatService(firestore: firestore);
+    chatService = ChatService(firestore: firestore, userService: userService);
     await userService.createProfile(
       uid: 'me',
       name: 'Current User',
@@ -34,13 +33,11 @@ void main() {
       email: 'priya@example.com',
     );
     await userService.addContact('me', 'maya');
-    if (withConversation) {
-      await chatService.sendMessage(
-        senderId: 'priya',
-        recipientId: 'me',
-        text: 'Meeting moved to 3pm',
-      );
-    }
+    await chatService.sendMessage(
+      senderId: 'priya',
+      recipientId: 'me',
+      text: 'Meeting moved to 3pm',
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: HomeScreen(
@@ -54,22 +51,44 @@ void main() {
     return userService;
   }
 
-  testWidgets('opens on the Messages tab with an empty chat list', (
-    tester,
-  ) async {
+  testWidgets('opens on the Messages tab with the chat list', (tester) async {
     await pumpHome(tester);
 
     expect(find.widgetWithText(AppBar, 'Messages'), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('Search messages'), findsOneWidget);
-    expect(find.textContaining('No conversations yet'), findsOneWidget);
-  });
-
-  testWidgets('lists stored conversations', (tester) async {
-    await pumpHome(tester, withConversation: true);
-
     expect(find.text('Priya Patel'), findsOneWidget);
     expect(find.text('Meeting moved to 3pm'), findsOneWidget);
+  });
+
+  testWidgets('prefixes the preview when the user sent the last message', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+
+    await chatService.sendMessage(
+      senderId: 'me',
+      recipientId: 'priya',
+      text: 'See you then',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('You: See you then'), findsOneWidget);
+  });
+
+  testWidgets('search filters the chat list', (tester) async {
+    await pumpHome(tester);
+
+    await tester.enterText(find.byType(TextField), 'nobody');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Priya Patel'), findsNothing);
+
+    await tester.enterText(find.byType(TextField), 'meeting');
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('Priya Patel'), findsOneWidget);
+    expect(find.text('Received'), findsWidgets);
   });
 
   testWidgets('bottom bar switches to the Contacts tab', (tester) async {
@@ -109,14 +128,14 @@ void main() {
   });
 
   testWidgets('tapping a chat opens that conversation', (tester) async {
-    await pumpHome(tester, withConversation: true);
-
+    await pumpHome(tester);
     await tester.tap(find.text('Priya Patel'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ChatScreen), findsOneWidget);
-    expect(find.text('Type a message'), findsOneWidget);
+    final screen = tester.widget<ChatScreen>(find.byType(ChatScreen));
+    expect(screen.otherUser.uid, 'priya');
     expect(find.text('Meeting moved to 3pm'), findsOneWidget);
+    expect(find.text('Type a message'), findsOneWidget);
   });
 
   testWidgets('message button on a contact opens that conversation', (
@@ -130,7 +149,8 @@ void main() {
     await tester.pumpAndSettle();
 
     final screen = tester.widget<ChatScreen>(find.byType(ChatScreen));
-    expect(screen.other.name, 'Maya Chen');
+    expect(screen.otherUser.name, 'Maya Chen');
+    expect(screen.currentUid, 'me');
   });
 
   testWidgets('Add Contact searches and saves a user under contacts', (

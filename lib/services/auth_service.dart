@@ -35,7 +35,7 @@ class AuthService {
       await _userService.createProfile(uid: user.uid, name: name, email: email);
       await user.reload();
     } on FirebaseAuthException catch (e) {
-      throw AuthException(_messageForCode(e.code));
+      throw AuthException(_messageForException(e));
     } on FirebaseException {
       // The account exists but the profile write failed; signIn will retry it.
       throw AuthException(
@@ -59,7 +59,7 @@ class AuthService {
         email: user.email ?? email,
       );
     } on FirebaseAuthException catch (e) {
-      throw AuthException(_messageForCode(e.code));
+      throw AuthException(_messageForException(e));
     } on FirebaseException {
       throw AuthException('Signed in, but your profile could not be loaded.');
     }
@@ -82,8 +82,8 @@ class AuthService {
     }
   }
 
-  String _messageForCode(String code) {
-    switch (code) {
+  String _messageForException(FirebaseAuthException exception) {
+    switch (exception.code) {
       case 'invalid-email':
         return 'That email address is not valid.';
       case 'email-already-in-use':
@@ -100,8 +100,14 @@ class AuthService {
         return 'Too many attempts. Please try again later.';
       case 'network-request-failed':
         return 'Network error. Check your connection and try again.';
+      case 'keychain-error':
+        return 'Secure sign-in storage is unavailable. Check the macOS app signing and Keychain Sharing setup.';
+      case 'operation-not-allowed':
+        return 'Email and password sign-in is not enabled for this app.';
+      case 'configuration-not-found':
+        return 'Firebase Authentication is not configured for this app.';
       default:
-        return 'Something went wrong. Please try again.';
+        return exception.message ?? 'Something went wrong. Please try again.';
     }
   }
 }

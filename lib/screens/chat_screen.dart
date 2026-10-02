@@ -1,22 +1,24 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/app_user.dart';
-import '../models/conversation.dart';
+import '../models/chat_message.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 
-/// A single conversation between [currentUid] and [other], stored in Firestore.
+/// A one-to-one conversation with [otherUser], streamed live from Firestore.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.currentUid,
-    required this.other,
+    required this.otherUser,
     this.chatService,
   });
 
   final String currentUid;
-  final AppUser other;
+  final AppUser otherUser;
   final ChatService? chatService;
 
   @override
@@ -27,7 +29,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   late final ChatService _chatService = widget.chatService ?? ChatService();
   late final Stream<List<ChatMessage>> _messages = _chatService.watchMessages(
-    ChatService.conversationId(widget.currentUid, widget.other.uid),
+    ChatService.chatIdFor(widget.currentUid, widget.otherUser.uid),
   );
 
   @override
@@ -36,35 +38,58 @@ class _ChatScreenState extends State<ChatScreen> {
     super.dispose();
   }
 
-  void _send() {
+  Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    _chatService.sendMessage(
-      senderId: widget.currentUid,
-      recipientId: widget.other.uid,
-      text: text,
-    );
     _controller.clear();
+    try {
+      await _chatService.sendMessage(
+        senderId: widget.currentUid,
+        recipientId: widget.otherUser.uid,
+        text: text,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      // Put the text back so the user doesn't lose what they typed.
+      if (_controller.text.isEmpty) _controller.text = text;
+      final reason =
+          error is FirebaseException && error.code == 'permission-denied'
+          ? 'Firestore denied this write. Deploy the latest firestore.rules.'
+          : 'Could not send message.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(reason)));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final chat = widget.other;
+    final other = widget.otherUser;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppColors.inkRaised,
         titleSpacing: 0,
         title: Row(
           children: [
             UserAvatar(
-              initials: chat.initials,
-              color: chat.avatarColor,
+              initials: other.initials,
+              color: other.avatarColor,
               radius: 18,
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [Text(chat.name, style: const TextStyle(fontSize: 16))],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(other.name, style: const TextStyle(fontSize: 16)),
+                  Text(
+                    other.email,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: context.surfaces.mutedText,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -79,12 +104,31 @@ class _ChatScreenState extends State<ChatScreen> {
             child: StreamBuilder<List<ChatMessage>>(
               stream: _messages,
               builder: (context, snapshot) {
-                final messages = snapshot.data ?? const <ChatMessage>[];
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Could not load messages.'));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final messages = snapshot.data ?? [];
+                if (messages.isEmpty) {
+                  return Center(
+                    child: Text(
+                      'Say hi to ${other.name}!',
+                      style: TextStyle(color: context.surfaces.mutedText),
+                    ),
+                  );
+                }
+
+                // Reversed so the list starts at the bottom and new messages
+                // stay in view as they arrive.
                 return ListView.builder(
+                  reverse: true,
                   padding: const EdgeInsets.all(16),
                   itemCount: messages.length,
                   itemBuilder: (context, index) {
-                    final message = messages[index];
+                    final message = messages[messages.length - 1 - index];
                     final isMine = message.senderId == widget.currentUid;
                     return Align(
                       alignment: isMine
@@ -100,10 +144,22 @@ class _ChatScreenState extends State<ChatScreen> {
                           maxWidth: MediaQuery.sizeOf(context).width * 0.75,
                         ),
                         decoration: BoxDecoration(
-                          color: isMine ? AppColors.plum : AppColors.inkHigh,
+                          color: isMine
+                              ? context.surfaces.sentBubble
+                              : context.surfaces.receivedBubble,
+                          border: Border.all(
+                            color: context.surfaces.glassBorder,
+                          ),
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        child: Text(message.text),
+                        child: Text(
+                          message.text,
+                          style: TextStyle(
+                            color: isMine
+                                ? Colors.white
+                                : Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
                       ),
                     );
                   },
@@ -114,7 +170,12 @@ class _ChatScreenState extends State<ChatScreen> {
           SafeArea(
             top: false,
             child: Container(
-              color: AppColors.inkRaised,
+              decoration: BoxDecoration(
+                color: context.surfaces.surface,
+                border: Border(
+                  top: BorderSide(color: context.surfaces.glassBorder),
+                ),
+              ),
               padding: const EdgeInsets.all(8),
               child: Row(
                 children: [
@@ -123,10 +184,13 @@ class _ChatScreenState extends State<ChatScreen> {
                       controller: _controller,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => _send(),
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(
+                          ChatService.maxMessageLength,
+                        ),
+                      ],
                       decoration: InputDecoration(
                         hintText: 'Type a message',
-                        filled: true,
-                        fillColor: AppColors.inkHigh,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 18,
                         ),
@@ -141,10 +205,16 @@ class _ChatScreenState extends State<ChatScreen> {
                   IconButton.filled(
                     tooltip: 'Send',
                     style: IconButton.styleFrom(
-                      backgroundColor: AppColors.gold,
-                      foregroundColor: AppColors.ink,
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                      side: context.surfaces.isGlass
+                          ? const BorderSide(
+                              color: Color(0xA6FFF2A8),
+                              width: 1.2,
+                            )
+                          : null,
                     ),
-                    icon: const Icon(Icons.send),
+                    icon: const Icon(Icons.send, shadows: []),
                     onPressed: _send,
                   ),
                 ],

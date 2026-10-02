@@ -105,6 +105,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   TextFormField(
                     controller: _nameController,
                     textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                     autofillHints: const [AutofillHints.name],
                     decoration: const InputDecoration(
                       labelText: 'Name',
@@ -124,6 +126,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                     autofillHints: const [AutofillHints.email],
                     decoration: const InputDecoration(
                       labelText: 'Email',
@@ -143,6 +147,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                     autofillHints: const [AutofillHints.newPassword],
                     decoration: const InputDecoration(
                       labelText: 'Password',
@@ -162,6 +168,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   TextFormField(
                     controller: _confirmPasswordController,
                     obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) {
+                      if (!_isSubmitting) _submit();
+                    },
                     decoration: const InputDecoration(
                       labelText: 'Confirm Password',
                       border: OutlineInputBorder(),

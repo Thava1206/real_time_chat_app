@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
@@ -51,41 +52,75 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          _titles[_currentIndex],
-          style: const TextStyle(fontWeight: FontWeight.w700),
+        title: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: buildFadeThroughTransition,
+          child: Text(
+            _titles[_currentIndex],
+            key: ValueKey(_currentIndex),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
         ),
-        backgroundColor: AppColors.ink,
       ),
-      body: _buildTab(),
+      body: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 340),
+        transitionBuilder: buildFadeThroughTransition,
+        layoutBuilder: (currentChild, previousChildren) => ClipRect(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [...previousChildren, ?currentChild],
+          ),
+        ),
+        child: KeyedSubtree(key: ValueKey(_currentIndex), child: _buildTab()),
+      ),
       floatingActionButton: _currentIndex == 0
-          ? FloatingActionButton(
-              tooltip: 'New chat',
-              backgroundColor: AppColors.gold,
-              foregroundColor: AppColors.ink,
-              onPressed: () => setState(() => _currentIndex = 1),
-              child: const Icon(Icons.edit_outlined),
+          ? DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: context.surfaces.isGlass
+                    ? [
+                        BoxShadow(
+                          color: Theme.of(context).colorScheme.primary
+                              .withValues(alpha: 0.34),
+                          blurRadius: 18,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: FloatingActionButton(
+                tooltip: 'New chat',
+                onPressed: () => setState(() => _currentIndex = 1),
+                child: const Icon(Icons.edit_outlined),
+              ),
             )
           : null,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (index) => setState(() => _currentIndex = index),
-        backgroundColor: AppColors.inkRaised,
-        indicatorColor: AppColors.gold.withValues(alpha: 0.25),
-        destinations: const [
+        destinations: [
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble, color: AppColors.gold),
+            icon: const Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(
+              Icons.chat_bubble,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: 'Messages',
           ),
           NavigationDestination(
-            icon: Icon(Icons.people_outline),
-            selectedIcon: Icon(Icons.people, color: AppColors.gold),
+            icon: const Icon(Icons.people_outline),
+            selectedIcon: Icon(
+              Icons.people,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: 'Contacts',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person, color: AppColors.gold),
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: Icon(
+              Icons.person,
+              color: Theme.of(context).colorScheme.primary,
+            ),
             label: 'Profile',
           ),
         ],

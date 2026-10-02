@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../navigation/app_page_route.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
 
@@ -93,6 +94,8 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
+                    textInputAction: TextInputAction.next,
+                    onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
                     autofillHints: const [AutofillHints.email],
                     decoration: const InputDecoration(
                       labelText: 'Email',
@@ -112,6 +115,10 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextFormField(
                     controller: _passwordController,
                     obscureText: true,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) {
+                      if (!_isSubmitting) _submit();
+                    },
                     autofillHints: const [AutofillHints.password],
                     decoration: const InputDecoration(
                       labelText: 'Password',
@@ -140,10 +147,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _isSubmitting
                         ? null
                         : () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const SignUpScreen(),
-                              ),
+                            pushAppPage<void>(
+                              context,
+                              (_) => const SignUpScreen(),
                             );
                           },
                     child: const Text("Don't have an account? Sign up"),

@@ -52,23 +52,34 @@ class UserService {
   Stream<List<AppUser>> watchContacts(String uid) =>
       _contacts(uid).snapshots().asyncMap((snapshot) async {
         final contacts = snapshot.docs.map(UserContact.fromFirestore).toList();
-        final profilesById = <String, AppUser>{};
-
-        for (var start = 0; start < contacts.length; start += 30) {
-          final ids = contacts.skip(start).take(30).map((c) => c.uid).toList();
-          final profiles = await _users
-              .where(FieldPath.documentId, whereIn: ids)
-              .get();
-          for (final profile in profiles.docs) {
-            profilesById[profile.id] = AppUser.fromFirestore(profile);
-          }
-        }
+        final profilesById = await fetchUsers(
+          contacts.map((contact) => contact.uid).toList(),
+        );
 
         return contacts
             .map((contact) => profilesById[contact.uid])
             .whereType<AppUser>()
             .toList();
       });
+
+  /// Loads the profiles for [uids], keyed by uid. Missing profiles are left
+  /// out. Firestore allows at most 30 ids per `whereIn`, so this batches.
+  Future<Map<String, AppUser>> fetchUsers(List<String> uids) async {
+    final ids = uids.toSet().toList();
+    final profilesById = <String, AppUser>{};
+
+    for (var start = 0; start < ids.length; start += 30) {
+      final batch = ids.skip(start).take(30).toList();
+      final profiles = await _users
+          .where(FieldPath.documentId, whereIn: batch)
+          .get();
+      for (final profile in profiles.docs) {
+        profilesById[profile.id] = AppUser.fromFirestore(profile);
+      }
+    }
+
+    return profilesById;
+  }
 
   Future<List<AppUser>> searchUsers(
     String query, {
