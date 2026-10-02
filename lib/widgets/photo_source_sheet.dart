@@ -23,7 +23,7 @@ Future<PhotoAction?> showPhotoSourceSheet(
     builder: (sheetContext) => LiquidGlassSurface(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       color: context.surfaces.isGlass
-          ? const Color(0xE6333C57)
+          ? const Color(0xFF333C57)
           : context.surfaces.surface,
       child: SafeArea(
         top: false,
