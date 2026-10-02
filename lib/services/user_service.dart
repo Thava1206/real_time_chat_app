@@ -10,6 +10,9 @@ class UserService {
 
   final FirebaseFirestore _firestore;
 
+  /// The database this service reads from, so related services can share it.
+  FirebaseFirestore get firestore => _firestore;
+
   CollectionReference<Map<String, dynamic>> get _users =>
       _firestore.collection('users');
 

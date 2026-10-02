@@ -244,7 +244,7 @@ class _ProfileViewState extends State<_ProfileView> {
           leading: const Icon(Icons.palette_outlined),
           title: const Text('Appearance'),
           subtitle: Text(
-            appearanceController?.appearance.label ?? 'Dark',
+            appearanceController?.appearance.label ?? 'Light',
             style: TextStyle(color: context.surfaces.mutedText),
           ),
           trailing: const Icon(Icons.chevron_right),
