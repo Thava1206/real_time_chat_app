@@ -83,6 +83,7 @@ class _ContactsTabState extends State<ContactsTab> {
       if (mounted) setState(() => _addingUid = null);
     }
   }
+
   Future<void> _openEditContactSheet(AppUser contact) =>
       showModalBottomSheet<void>(
         context: context,
@@ -158,42 +159,6 @@ class _ContactsTabState extends State<ContactsTab> {
                               child: Text(
                                 'No contacts yet. Add someone to get started.',
                                 textAlign: TextAlign.center,
-                      );
-                    }
-
-                    return ListView.separated(
-                      itemCount: contacts.length,
-                      separatorBuilder: (_, _) => const Divider(indent: 72),
-                      itemBuilder: (context, index) {
-                        final contact = contacts[index];
-                        return ListTile(
-                          onTap: () => _openEditContactSheet(contact),
-                          leading: UserAvatar(
-                            initials: contact.initials,
-                            color: contact.avatarColor,
-                            photo: contact.photo,
-                          ),
-                          title: Text(contact.name),
-                          subtitle: Text(
-                            contact.bio.isNotEmpty
-                                ? contact.bio
-                                : contact.email,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(color: context.surfaces.mutedText),
-                          ),
-                          trailing: IconButton(
-                            tooltip: 'Message',
-                            icon: Icon(
-                              Icons.chat_bubble_outline,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                            onPressed: () => pushAppPage<void>(
-                              context,
-                              (_) => ChatScreen(
-                                currentUid: uid,
-                                otherUser: contact,
-                                chatService: widget.chatService,
                               ),
                             ),
                           ),
@@ -212,6 +177,7 @@ class _ContactsTabState extends State<ContactsTab> {
 
   Widget _buildContactTile(BuildContext context, AppUser contact) {
     return ListTile(
+      onTap: () => _openEditContactSheet(contact),
       leading: UserAvatar(
         initials: contact.initials,
         color: contact.avatarColor,
