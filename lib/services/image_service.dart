@@ -69,14 +69,16 @@ Uint8List shrinkImage(
   ({Uint8List bytes, int maxDimension, int maxBytes}) args,
 ) {
   final (:bytes, :maxDimension, :maxBytes) = args;
-  if (bytes.length <= maxBytes) return bytes;
-
   final decoded = img.decodeImage(bytes);
   if (decoded == null) {
     throw const FormatException('Unsupported image format');
   }
 
   var image = img.bakeOrientation(decoded);
+  if (bytes.length <= maxBytes &&
+      max(image.width, image.height) <= maxDimension) {
+    return bytes;
+  }
   if (max(image.width, image.height) > maxDimension) {
     image = image.width >= image.height
         ? img.copyResize(image, width: maxDimension)

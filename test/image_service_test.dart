@@ -44,9 +44,26 @@ void main() {
 
   test('rejects bytes that are not an image', () {
     expect(
-      () =>
-          shrinkImage((bytes: Uint8List(100), maxDimension: 256, maxBytes: 10)),
+      () => shrinkImage((
+        bytes: Uint8List(100),
+        maxDimension: 256,
+        maxBytes: 1000,
+      )),
       throwsFormatException,
     );
+  });
+
+  test('resizes an image whose bytes fit but dimensions are too large', () {
+    final bytes = img.encodePng(img.Image(width: 1000, height: 800));
+
+    final result = shrinkImage((
+      bytes: bytes,
+      maxDimension: 256,
+      maxBytes: bytes.length,
+    ));
+
+    final decoded = img.decodeImage(result)!;
+    expect(decoded.width, lessThanOrEqualTo(256));
+    expect(decoded.height, lessThanOrEqualTo(256));
   });
 }
