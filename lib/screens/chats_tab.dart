@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../models/message_search_result.dart';
 import '../models/chat_summary.dart';
 import '../models/app_user.dart';
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
@@ -74,16 +75,15 @@ class _ChatsTabState extends State<ChatsTab> {
   }
 
   void _openResult(MessageSearchResult result) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUid: widget.currentUid!,
-          otherUser: result.isGroup ? null : result.otherUser,
-          chatId: result.isGroup ? result.chatId : null,
-          groupName: result.groupName,
-          groupMembers: result.members,
-          chatService: _chatService,
-        ),
+    pushAppPage<void>(
+      context,
+      (_) => ChatScreen(
+        currentUid: widget.currentUid!,
+        otherUser: result.isGroup ? null : result.otherUser,
+        chatId: result.isGroup ? result.chatId : null,
+        groupName: result.groupName,
+        groupMembers: result.members,
+        chatService: _chatService,
       ),
     );
   }
@@ -105,15 +105,14 @@ class _ChatsTabState extends State<ChatsTab> {
         participantIds: details.members.map((member) => member.uid).toList(),
       );
       if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
-            currentUid: uid,
-            chatId: chatId,
-            groupName: details.name,
-            groupMembers: details.members,
-            chatService: _chatService,
-          ),
+      await pushAppPage<void>(
+        context,
+        (_) => ChatScreen(
+          currentUid: uid,
+          chatId: chatId,
+          groupName: details.name,
+          groupMembers: details.members,
+          chatService: _chatService,
         ),
       );
     } catch (error) {
@@ -258,7 +257,11 @@ class _ChatsTabState extends State<ChatsTab> {
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
             )
-          : UserAvatar(initials: other.initials, color: other.avatarColor),
+          : UserAvatar(
+              initials: other.initials,
+              color: other.avatarColor,
+              photo: other.photo,
+            ),
       title: Text(
         chat.isGroup ? chat.groupName ?? 'Group chat' : other.name,
         style: const TextStyle(fontWeight: FontWeight.w600),
@@ -273,16 +276,15 @@ class _ChatsTabState extends State<ChatsTab> {
         _formatTime(chat.updatedAt),
         style: TextStyle(fontSize: 12, color: context.surfaces.mutedText),
       ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
-            currentUid: widget.currentUid!,
-            otherUser: chat.isGroup ? null : other,
-            chatId: chat.isGroup ? chat.chatId : null,
-            groupName: chat.groupName,
-            groupMembers: chat.members,
-            chatService: _chatService,
-          ),
+      onTap: () => pushAppPage<void>(
+        context,
+        (_) => ChatScreen(
+          currentUid: widget.currentUid!,
+          otherUser: chat.isGroup ? null : other,
+          chatId: chat.isGroup ? chat.chatId : null,
+          groupName: chat.groupName,
+          groupMembers: chat.members,
+          chatService: _chatService,
         ),
       ),
     );

@@ -58,6 +58,7 @@ class MessageSearchResults extends StatelessWidget {
                   : UserAvatar(
                       initials: result.otherUser.initials,
                       color: result.otherUser.avatarColor,
+                      photo: result.otherUser.photo,
                     ),
               title: Row(
                 children: [

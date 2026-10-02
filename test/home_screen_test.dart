@@ -153,6 +153,33 @@ void main() {
     expect(screen.currentUid, 'me');
   });
 
+  testWidgets('selecting a contact edits its local name and note', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Maya Chen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit contact info'), findsOneWidget);
+    expect(find.text('maya@example.com'), findsWidgets);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Contact name'),
+      'Maya C.',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Note'),
+      'Design team',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Maya C.'), findsOneWidget);
+    expect(find.text('Design team'), findsOneWidget);
+  });
+
   testWidgets('Add Contact searches and saves a user under contacts', (
     tester,
   ) async {
@@ -167,8 +194,14 @@ void main() {
     await tester.tap(find.byTooltip('Search users'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Priya Patel'), findsOneWidget);
-    await tester.tap(find.byTooltip('Add Priya Patel'));
+    final dialog = find.byType(Dialog);
+    expect(
+      find.descendant(of: dialog, matching: find.text('Priya Patel')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.descendant(of: dialog, matching: find.byTooltip('Add Priya Patel')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
@@ -176,5 +209,45 @@ void main() {
     expect(find.text('Priya Patel'), findsOneWidget);
     final contacts = await userService.watchContacts('me').first;
     expect(contacts.map((contact) => contact.name), contains('Priya Patel'));
+  });
+
+  testWidgets('Contacts tab suggests people who are not contacts yet', (
+    tester,
+  ) async {
+    final userService = await pumpHome(tester);
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    // Priya messaged me but isn't a contact; Maya already is.
+    expect(find.text('Suggested for you'), findsOneWidget);
+    expect(find.text('Messaged you'), findsOneWidget);
+    expect(find.byTooltip('Hide Maya Chen'), findsNothing);
+
+    await tester.tap(find.bySemanticsLabel('Add Priya Patel'));
+    await tester.pumpAndSettle();
+
+    final contacts = await userService.watchContacts('me').first;
+    expect(contacts.map((contact) => contact.name), contains('Priya Patel'));
+    expect(find.text('Suggested for you'), findsNothing);
+    expect(find.text('Priya Patel'), findsOneWidget);
+  });
+
+  testWidgets('a suggestion can be hidden or opened as a chat', (tester) async {
+    await pumpHome(tester);
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Messaged you'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ChatScreen>(find.byType(ChatScreen)).otherUser.uid,
+      'priya',
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('Hide Priya Patel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Suggested for you'), findsNothing);
   });
 }

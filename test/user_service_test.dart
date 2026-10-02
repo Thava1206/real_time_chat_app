@@ -132,4 +132,44 @@ void main() {
     expect(doc.data()!['nameLower'], 'jane smith');
     expect(doc.data()!['bio'], 'Hi!');
   });
+
+  test('updatePhoto sets and removes the profile photo', () async {
+    await userService.createProfile(
+      uid: 'u1',
+      name: 'Jane Doe',
+      email: 'jane@example.com',
+    );
+
+    await userService.updatePhoto('u1', 'cGhvdG8=');
+    expect((await userService.watchUser('u1').first)!.photo, 'cGhvdG8=');
+
+    await userService.updatePhoto('u1', null);
+    final doc = await firestore.collection('users').doc('u1').get();
+    expect(doc.data()!.containsKey('photo'), isFalse);
+    expect((await userService.watchUser('u1').first)!.photo, isNull);
+  });
+
+  test('updateContact changes only the owner contact information', () async {
+    await userService.createProfile(
+      uid: 'u2',
+      name: 'Sam Okafor',
+      email: 'sam@example.com',
+    );
+    await userService.addContact('u1', 'u2');
+
+    await userService.updateContact(
+      'u1',
+      'u2',
+      displayName: ' Samuel ',
+      note: ' Work friend ',
+    );
+
+    final contact = (await userService.watchContacts('u1').first).single;
+    expect(contact.name, 'Samuel');
+    expect(contact.bio, 'Work friend');
+
+    final publicProfile = await userService.watchUser('u2').first;
+    expect(publicProfile!.name, 'Sam Okafor');
+    expect(publicProfile.bio, isEmpty);
+  });
 }

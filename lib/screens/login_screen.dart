@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../navigation/app_page_route.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
 
@@ -62,6 +63,35 @@ class _LoginScreenState extends State<LoginScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  Center(
+                    child: Transform.rotate(
+                      angle: -0.06,
+                      child: ShaderMask(
+                        shaderCallback: (bounds) => const LinearGradient(
+                          colors: [Colors.pinkAccent, Colors.orangeAccent],
+                        ).createShader(bounds),
+                        child: const Text(
+                          'Shepstagram',
+                          style: TextStyle(
+                            fontFamily: 'Comic Sans MS',
+                            fontFamilyFallback: ['Chalkboard SE', 'cursive'],
+                            fontSize: 44,
+                            fontWeight: FontWeight.w900,
+                            fontStyle: FontStyle.italic,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black54,
+                                offset: Offset(3, 3),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   Center(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(72),
@@ -146,10 +176,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _isSubmitting
                         ? null
                         : () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const SignUpScreen(),
-                              ),
+                            pushAppPage<void>(
+                              context,
+                              (_) => const SignUpScreen(),
                             );
                           },
                     child: const Text("Don't have an account? Sign up"),
