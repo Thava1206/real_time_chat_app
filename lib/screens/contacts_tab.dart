@@ -37,6 +37,28 @@ class _ContactsTabState extends State<ContactsTab> {
     ),
   );
 
+  Future<void> _openEditContactSheet(AppUser contact) =>
+      showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => LiquidGlassSurface(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          color: context.surfaces.isGlass
+              ? const Color(0xFF333C57)
+              : context.surfaces.surface,
+          child: _EditContactSheet(
+            contact: contact,
+            onSave: (name, note) => _userService.updateContact(
+              widget.currentUid!,
+              contact.uid,
+              displayName: name,
+              note: note,
+            ),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final uid = widget.currentUid;
@@ -83,6 +105,7 @@ class _ContactsTabState extends State<ContactsTab> {
                       itemBuilder: (context, index) {
                         final contact = contacts[index];
                         return ListTile(
+                          onTap: () => _openEditContactSheet(contact),
                           leading: UserAvatar(
                             initials: contact.initials,
                             color: contact.avatarColor,
@@ -119,6 +142,127 @@ class _ContactsTabState extends State<ContactsTab> {
                 ),
         ),
       ],
+    );
+  }
+}
+
+class _EditContactSheet extends StatefulWidget {
+  const _EditContactSheet({required this.contact, required this.onSave});
+
+  final AppUser contact;
+  final Future<void> Function(String name, String note) onSave;
+
+  @override
+  State<_EditContactSheet> createState() => _EditContactSheetState();
+}
+
+class _EditContactSheetState extends State<_EditContactSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final _nameController = TextEditingController(text: widget.contact.name);
+  late final _noteController = TextEditingController(text: widget.contact.bio);
+  bool _isSaving = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _noteController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _isSaving = true;
+      _errorMessage = null;
+    });
+    try {
+      await widget.onSave(_nameController.text, _noteController.text);
+      if (mounted) Navigator.of(context).pop();
+    } on FirebaseException catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = error.code == 'permission-denied'
+              ? 'Firestore denied this change. Deploy the latest firestore.rules.'
+              : 'Could not update contact (${error.code}).';
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _errorMessage = 'Could not update contact.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        20,
+        24,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Edit contact info',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              widget.contact.email,
+              style: TextStyle(color: context.surfaces.mutedText),
+            ),
+            const SizedBox(height: 16),
+            if (_errorMessage != null) ...[
+              Text(
+                _errorMessage!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              const SizedBox(height: 12),
+            ],
+            TextFormField(
+              controller: _nameController,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              textInputAction: TextInputAction.next,
+              onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
+              maxLength: 50,
+              decoration: const InputDecoration(labelText: 'Contact name'),
+              validator: (value) => value == null || value.trim().isEmpty
+                  ? 'Please enter a contact name.'
+                  : null,
+            ),
+            const SizedBox(height: 12),
+            TextFormField(
+              controller: _noteController,
+              maxLength: 140,
+              maxLines: 3,
+              minLines: 1,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) {
+                if (!_isSaving) _save();
+              },
+              decoration: const InputDecoration(labelText: 'Note'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: _isSaving ? null : _save,
+              child: _isSaving
+                  ? const SizedBox.square(
+                      dimension: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Save'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

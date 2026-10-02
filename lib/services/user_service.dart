@@ -57,7 +57,19 @@ class UserService {
         );
 
         return contacts
-            .map((contact) => profilesById[contact.uid])
+            .map((contact) {
+              final profile = profilesById[contact.uid];
+              if (profile == null) return null;
+              return AppUser(
+                uid: profile.uid,
+                name: contact.displayName ?? profile.name,
+                email: profile.email,
+                avatarColor: profile.avatarColor,
+                bio: contact.note.isNotEmpty ? contact.note : profile.bio,
+                createdAt: profile.createdAt,
+                photo: profile.photo,
+              );
+            })
             .whereType<AppUser>()
             .toList();
       });
@@ -107,6 +119,19 @@ class UserService {
     return _contacts(uid)
         .doc(contactUid)
         .set(UserContact(uid: contactUid).toFirestore());
+  }
+
+  /// Updates how a contact is shown for this user without changing the
+  /// contact's public account profile.
+  Future<void> updateContact(
+    String uid,
+    String contactUid, {
+    required String displayName,
+    required String note,
+  }) {
+    return _contacts(uid)
+        .doc(contactUid)
+        .update({'displayName': displayName.trim(), 'note': note.trim()});
   }
 
   Future<void> updateProfile(String uid, {String? name, String? bio}) {
