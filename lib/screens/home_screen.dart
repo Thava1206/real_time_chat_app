@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import 'chats_tab.dart';
@@ -8,10 +9,16 @@ import 'profile_tab.dart';
 
 /// Main screen shown after login, with a bottom bar to switch between tabs.
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, this.currentUserId, this.userService});
+  const HomeScreen({
+    super.key,
+    this.currentUserId,
+    this.userService,
+    this.chatService,
+  });
 
   final String? currentUserId;
   final UserService? userService;
+  final ChatService? chatService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -28,11 +35,15 @@ class _HomeScreenState extends State<HomeScreen> {
         return ContactsTab(
           currentUid: widget.currentUserId,
           userService: widget.userService,
+          chatService: widget.chatService,
         );
       case 2:
         return const ProfileTab();
       default:
-        return const ChatsTab();
+        return ChatsTab(
+          currentUid: widget.currentUserId,
+          chatService: widget.chatService,
+        );
     }
   }
 

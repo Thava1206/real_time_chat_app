@@ -1,81 +1,107 @@
+import 'package:fake_cloud_firestore/fake_cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:real_time_chat_app/data/sample_data.dart';
+import 'package:real_time_chat_app/models/app_user.dart';
 import 'package:real_time_chat_app/screens/chat_screen.dart';
+import 'package:real_time_chat_app/services/chat_service.dart';
+import 'package:real_time_chat_app/theme/app_theme.dart';
 
 void main() {
-  final onlineChat = sampleChats.firstWhere((c) => c.isOnline);
-  final offlineChat = sampleChats.firstWhere((c) => !c.isOnline);
+  const maya = AppUser(
+    uid: 'maya',
+    name: 'Maya Chen',
+    email: 'maya@example.com',
+    avatarColor: AppColors.plum,
+  );
 
-  Finder messageBubbles() =>
-      find.descendant(of: find.byType(ListView), matching: find.byType(Text));
+  late FakeFirebaseFirestore firestore;
+  late ChatService chatService;
 
-  Future<void> pumpChat(WidgetTester tester, SampleChat chat) =>
-      tester.pumpWidget(MaterialApp(home: ChatScreen(chat: chat)));
-
-  testWidgets('shows the contact name and online status', (tester) async {
-    await pumpChat(tester, onlineChat);
-
-    expect(find.widgetWithText(AppBar, onlineChat.name), findsOneWidget);
-    expect(find.widgetWithText(AppBar, 'Online'), findsOneWidget);
+  setUp(() {
+    firestore = FakeFirebaseFirestore();
+    chatService = ChatService(firestore: firestore);
   });
 
-  testWidgets('shows offline status for offline contacts', (tester) async {
-    await pumpChat(tester, offlineChat);
+  Future<void> pumpChat(WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ChatScreen(
+          currentUid: 'me',
+          other: maya,
+          chatService: chatService,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
 
-    expect(find.widgetWithText(AppBar, 'Offline'), findsOneWidget);
+  testWidgets('shows the contact name', (tester) async {
+    await pumpChat(tester);
+
+    expect(find.widgetWithText(AppBar, 'Maya Chen'), findsOneWidget);
   });
 
-  testWidgets('shows the last message in the conversation', (tester) async {
-    await pumpChat(tester, onlineChat);
+  testWidgets('shows stored messages', (tester) async {
+    await chatService.sendMessage(
+      senderId: 'maya',
+      recipientId: 'me',
+      text: 'Stored hello',
+    );
+    await pumpChat(tester);
 
-    expect(find.text(onlineChat.lastMessage), findsOneWidget);
+    expect(find.text('Stored hello'), findsOneWidget);
   });
 
-  testWidgets('send button adds the message and clears the input', (
+  testWidgets('send button stores the message and clears the input', (
     tester,
   ) async {
-    await pumpChat(tester, onlineChat);
+    await pumpChat(tester);
 
     await tester.enterText(find.byType(TextField), 'Hello from the test');
     await tester.tap(find.byTooltip('Send'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Hello from the test'), findsOneWidget);
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.controller!.text, isEmpty);
+
+    final conversation = await firestore
+        .collection('conversations')
+        .doc(ChatService.conversationId('me', 'maya'))
+        .get();
+    expect(conversation.data()!['lastMessage'], 'Hello from the test');
   });
 
   testWidgets('pressing enter on the keyboard sends the message', (
     tester,
   ) async {
-    await pumpChat(tester, onlineChat);
+    await pumpChat(tester);
 
     await tester.enterText(find.byType(TextField), 'Sent with enter');
     await tester.testTextInput.receiveAction(TextInputAction.send);
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Sent with enter'), findsOneWidget);
   });
 
-  testWidgets('blank messages are not sent', (tester) async {
-    await pumpChat(tester, onlineChat);
-    final bubbleCount = messageBubbles().evaluate().length;
+  testWidgets('blank messages are not stored', (tester) async {
+    await pumpChat(tester);
 
     await tester.enterText(find.byType(TextField), '   ');
     await tester.tap(find.byTooltip('Send'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(messageBubbles().evaluate().length, bubbleCount);
+    final conversations = await firestore.collection('conversations').get();
+    expect(conversations.docs, isEmpty);
   });
 
   testWidgets('sent messages are trimmed', (tester) async {
-    await pumpChat(tester, onlineChat);
+    await pumpChat(tester);
 
     await tester.enterText(find.byType(TextField), '  padded  ');
     await tester.tap(find.byTooltip('Send'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('padded'), findsOneWidget);
   });

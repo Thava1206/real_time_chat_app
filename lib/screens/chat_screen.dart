@@ -1,15 +1,23 @@
 import 'package:flutter/material.dart';
 
-import '../data/sample_data.dart';
+import '../models/app_user.dart';
+import '../models/conversation.dart';
+import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 
-/// A single conversation. Messages are kept in local state for now; hook
-/// this up to Firestore to make it real time.
+/// A single conversation between [currentUid] and [other], stored in Firestore.
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.chat});
+  const ChatScreen({
+    super.key,
+    required this.currentUid,
+    required this.other,
+    this.chatService,
+  });
 
-  final SampleChat chat;
+  final String currentUid;
+  final AppUser other;
+  final ChatService? chatService;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -17,11 +25,10 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
-  late final List<({String text, bool isMine})> _messages = [
-    (text: 'Hey! How is the project going?', isMine: false),
-    (text: 'Pretty good, working on the UI right now.', isMine: true),
-    (text: widget.chat.lastMessage, isMine: false),
-  ];
+  late final ChatService _chatService = widget.chatService ?? ChatService();
+  late final Stream<List<ChatMessage>> _messages = _chatService.watchMessages(
+    ChatService.conversationId(widget.currentUid, widget.other.uid),
+  );
 
   @override
   void dispose() {
@@ -32,13 +39,17 @@ class _ChatScreenState extends State<ChatScreen> {
   void _send() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
-    setState(() => _messages.add((text: text, isMine: true)));
+    _chatService.sendMessage(
+      senderId: widget.currentUid,
+      recipientId: widget.other.uid,
+      text: text,
+    );
     _controller.clear();
   }
 
   @override
   Widget build(BuildContext context) {
-    final chat = widget.chat;
+    final chat = widget.other;
     return Scaffold(
       appBar: AppBar(
         backgroundColor: AppColors.inkRaised,
@@ -47,25 +58,13 @@ class _ChatScreenState extends State<ChatScreen> {
           children: [
             UserAvatar(
               initials: chat.initials,
-              color: chat.color,
+              color: chat.avatarColor,
               radius: 18,
-              isOnline: chat.isOnline,
             ),
             const SizedBox(width: 12),
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(chat.name, style: const TextStyle(fontSize: 16)),
-                Text(
-                  chat.isOnline ? 'Online' : 'Offline',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: chat.isOnline
-                        ? AppColors.online
-                        : AppColors.textMuted,
-                  ),
-                ),
-              ],
+              children: [Text(chat.name, style: const TextStyle(fontSize: 16))],
             ),
           ],
         ),
@@ -77,32 +76,37 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final message = _messages[index];
-                return Align(
-                  alignment: message.isMine
-                      ? Alignment.centerRight
-                      : Alignment.centerLeft,
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 4),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 10,
-                    ),
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.sizeOf(context).width * 0.75,
-                    ),
-                    decoration: BoxDecoration(
-                      color: message.isMine
-                          ? AppColors.plum
-                          : AppColors.inkHigh,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Text(message.text),
-                  ),
+            child: StreamBuilder<List<ChatMessage>>(
+              stream: _messages,
+              builder: (context, snapshot) {
+                final messages = snapshot.data ?? const <ChatMessage>[];
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    final isMine = message.senderId == widget.currentUid;
+                    return Align(
+                      alignment: isMine
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        constraints: BoxConstraints(
+                          maxWidth: MediaQuery.sizeOf(context).width * 0.75,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isMine ? AppColors.plum : AppColors.inkHigh,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Text(message.text),
+                      ),
+                    );
+                  },
                 );
               },
             ),
