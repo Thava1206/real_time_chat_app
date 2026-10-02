@@ -11,7 +11,10 @@ service cloud.firestore {
         && request.resource.data.name is string
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 50
-        && request.resource.data.get('bio', '').size() <= 140;
+        && request.resource.data.get('bio', '').size() <= 140
+        // Base64 profile photo, kept small since every chat list reads it.
+        && request.resource.data.get('photo', '') is string
+        && request.resource.data.get('photo', '').size() <= 100000;
       allow delete: if false;
 
       match /contacts/{contactUid} {
@@ -37,6 +40,11 @@ service cloud.firestore {
       return text is string && text.size() > 0 && text.size() <= 1000;
     }
 
+    // Base64 image, capped to stay under Firestore's 1 MiB document limit.
+    function isValidImage(image) {
+      return image is string && image.size() > 0 && image.size() <= 900000;
+    }
+
     match /chats/{chatId} {
       // Checked against the stored participants so the Messages tab can list
       // chats with an array-contains query.
@@ -52,13 +60,18 @@ service cloud.firestore {
       allow delete: if false;
 
       // Messages can be sent and read by the two members, but never edited.
+      // A message is either text, or an image with empty text.
       match /messages/{messageId} {
         allow read: if isChatMember(chatId);
         allow create: if isChatMember(chatId)
           && request.resource.data.keys().hasOnly(
-            ['senderId', 'text', 'createdAt'])
+            ['senderId', 'text', 'image', 'createdAt'])
           && request.resource.data.senderId == request.auth.uid
-          && isValidText(request.resource.data.text)
+          && (('image' in request.resource.data
+                && isValidImage(request.resource.data.image)
+                && request.resource.data.text == '')
+            || (!('image' in request.resource.data)
+                && isValidText(request.resource.data.text)))
           && request.resource.data.createdAt == request.time;
         allow update, delete: if false;
       }

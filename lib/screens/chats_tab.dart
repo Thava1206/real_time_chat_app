@@ -177,7 +177,11 @@ class _ChatsTabState extends State<ChatsTab> {
         : chat.lastMessage;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: UserAvatar(initials: other.initials, color: other.avatarColor),
+      leading: UserAvatar(
+        initials: other.initials,
+        color: other.avatarColor,
+        photo: other.photo,
+      ),
       title: Text(
         other.name,
         style: const TextStyle(fontWeight: FontWeight.w600),

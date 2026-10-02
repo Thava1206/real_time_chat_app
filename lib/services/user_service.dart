@@ -116,4 +116,9 @@ class UserService {
       if (bio != null) 'bio': bio.trim(),
     });
   }
+
+  /// Sets the base64-encoded profile [photo], or removes it when null.
+  Future<void> updatePhoto(String uid, String? photo) {
+    return _users.doc(uid).update({'photo': photo ?? FieldValue.delete()});
+  }
 }

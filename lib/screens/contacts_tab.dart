@@ -86,6 +86,7 @@ class _ContactsTabState extends State<ContactsTab> {
                           leading: UserAvatar(
                             initials: contact.initials,
                             color: contact.avatarColor,
+                            photo: contact.photo,
                           ),
                           title: Text(contact.name),
                           subtitle: Text(
@@ -270,6 +271,7 @@ class _AddContactDialogState extends State<_AddContactDialog> {
                           leading: UserAvatar(
                             initials: user.initials,
                             color: user.avatarColor,
+                            photo: user.photo,
                             radius: 18,
                           ),
                           title: Text(user.name),

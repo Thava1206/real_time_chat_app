@@ -17,6 +17,13 @@ class ChatService {
   /// Longest message the Firestore rules accept.
   static const maxMessageLength = 1000;
 
+  /// Longest base64 image the Firestore rules accept. Leaves headroom under
+  /// Firestore's 1 MiB document limit.
+  static const maxImageLength = 900000;
+
+  /// Chat-list preview shown for an image message.
+  static const imagePreview = '📷 Photo';
+
   final FirebaseFirestore _firestore;
   final UserService _userService;
 
@@ -135,7 +142,7 @@ class ChatService {
     return results;
   }
 
-  /// Adds the message and updates the chat's last-message preview together.
+  /// Sends a text message.
   Future<void> sendMessage({
     required String senderId,
     required String recipientId,
@@ -148,6 +155,41 @@ class ChatService {
     if (trimmed.length > maxMessageLength) {
       throw ArgumentError.value(text, 'text', 'Message is too long');
     }
+
+    return _send(
+      ChatMessage(id: '', senderId: senderId, text: trimmed),
+      recipientId: recipientId,
+      preview: trimmed,
+    );
+  }
+
+  /// Sends a base64-encoded [image] as its own message.
+  Future<void> sendImage({
+    required String senderId,
+    required String recipientId,
+    required String image,
+  }) {
+    if (image.isEmpty) {
+      throw ArgumentError.value(image, 'image', 'Image is empty');
+    }
+    if (image.length > maxImageLength) {
+      throw ArgumentError.value(image.length, 'image', 'Image is too large');
+    }
+
+    return _send(
+      ChatMessage(id: '', senderId: senderId, text: '', image: image),
+      recipientId: recipientId,
+      preview: imagePreview,
+    );
+  }
+
+  /// Adds [message] and updates the chat's last-message preview together.
+  Future<void> _send(
+    ChatMessage message, {
+    required String recipientId,
+    required String preview,
+  }) {
+    final senderId = message.senderId;
     if (senderId == recipientId) {
       throw ArgumentError.value(
         recipientId,
@@ -157,13 +199,11 @@ class ChatService {
     }
 
     final chatId = chatIdFor(senderId, recipientId);
-    final message = ChatMessage(id: '', senderId: senderId, text: trimmed);
-
     return (_firestore.batch()
           ..set(_messages(chatId).doc(), message.toFirestore())
           ..set(_chats.doc(chatId), {
             'participants': _participants(senderId, recipientId),
-            'lastMessage': trimmed,
+            'lastMessage': preview,
             'lastSenderId': senderId,
             'updatedAt': FieldValue.serverTimestamp(),
           }))
