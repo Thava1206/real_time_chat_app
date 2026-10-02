@@ -37,21 +37,34 @@ class MessageSearchResults extends StatelessWidget {
           itemBuilder: (context, index) {
             final result = matches[index];
             final sent = result.message.senderId == currentUid;
+            final title = result.isGroup
+                ? result.groupName ?? 'Group chat'
+                : result.otherUser.name;
             return ListTile(
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
                 vertical: 4,
               ),
-              leading: UserAvatar(
-                initials: result.otherUser.initials,
-                color: result.otherUser.avatarColor,
-                photo: result.otherUser.photo,
-              ),
+              leading: result.isGroup
+                  ? CircleAvatar(
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .primaryContainer,
+                      child: Icon(
+                        Icons.groups_2_outlined,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    )
+                  : UserAvatar(
+                      initials: result.otherUser.initials,
+                      color: result.otherUser.avatarColor,
+                      photo: result.otherUser.photo,
+                    ),
               title: Row(
                 children: [
                   Expanded(
                     child: Text(
-                      result.otherUser.name,
+                      title,
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),

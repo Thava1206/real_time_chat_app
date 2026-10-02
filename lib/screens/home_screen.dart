@@ -44,6 +44,7 @@ class _HomeScreenState extends State<HomeScreen> {
         return ChatsTab(
           currentUid: widget.currentUserId,
           chatService: widget.chatService,
+          userService: widget.userService,
         );
     }
   }

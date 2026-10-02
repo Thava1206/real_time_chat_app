@@ -11,20 +11,39 @@ import '../widgets/base64_image.dart';
 import '../widgets/photo_source_sheet.dart';
 import '../widgets/user_avatar.dart';
 
-/// A one-to-one conversation with [otherUser], streamed live from Firestore.
+/// A direct or group conversation streamed live from Firestore.
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     super.key,
     required this.currentUid,
-    required this.otherUser,
+    AppUser? otherUser,
+    this.chatId,
+    this.groupName,
+    this.groupMembers = const [],
     this.chatService,
     this.imageService,
-  });
+  }) : otherUser =
+           otherUser ??
+           const AppUser(
+             uid: '',
+             name: 'Group chat',
+             email: '',
+             avatarColor: Color(0xFF59647A),
+           ),
+       assert(otherUser != null || chatId != null);
 
   final String currentUid;
   final AppUser otherUser;
+  final String? chatId;
+  final String? groupName;
+  final List<AppUser> groupMembers;
   final ChatService? chatService;
   final ImageService? imageService;
+
+  bool get isGroup => chatId != null;
+
+  String get resolvedChatId =>
+      chatId ?? ChatService.chatIdFor(currentUid, otherUser.uid);
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -35,7 +54,7 @@ class _ChatScreenState extends State<ChatScreen> {
   late final ChatService _chatService = widget.chatService ?? ChatService();
   late final ImageService _imageService = widget.imageService ?? ImageService();
   late final Stream<List<ChatMessage>> _messages = _chatService.watchMessages(
-    ChatService.chatIdFor(widget.currentUid, widget.otherUser.uid),
+    widget.resolvedChatId,
   );
 
   bool _isSendingImage = false;
@@ -51,11 +70,19 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
     _controller.clear();
     try {
-      await _chatService.sendMessage(
-        senderId: widget.currentUid,
-        recipientId: widget.otherUser.uid,
-        text: text,
-      );
+      if (widget.isGroup) {
+        await _chatService.sendGroupMessage(
+          chatId: widget.resolvedChatId,
+          senderId: widget.currentUid,
+          text: text,
+        );
+      } else {
+        await _chatService.sendMessage(
+          senderId: widget.currentUid,
+          recipientId: widget.otherUser.uid,
+          text: text,
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       // Put the text back so the user doesn't lose what they typed.
@@ -72,11 +99,19 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final image = await _imageService.pickMessageImage(source);
       if (image == null) return;
-      await _chatService.sendImage(
-        senderId: widget.currentUid,
-        recipientId: widget.otherUser.uid,
-        image: image,
-      );
+      if (widget.isGroup) {
+        await _chatService.sendGroupImage(
+          chatId: widget.resolvedChatId,
+          senderId: widget.currentUid,
+          image: image,
+        );
+      } else {
+        await _chatService.sendImage(
+          senderId: widget.currentUid,
+          recipientId: widget.otherUser.uid,
+          image: image,
+        );
+      }
     } catch (error) {
       if (!mounted) return;
       _showSendError(
@@ -110,25 +145,50 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final other = widget.otherUser;
+    final memberNames = widget.groupMembers
+        .where((member) => member.uid != widget.currentUid)
+        .map((member) => member.name)
+        .join(', ');
+    final groupMemberCount =
+        widget.groupMembers.any((member) => member.uid == widget.currentUid)
+        ? widget.groupMembers.length
+        : widget.groupMembers.length + 1;
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Row(
           children: [
-            UserAvatar(
-              initials: other.initials,
-              color: other.avatarColor,
-              photo: other.photo,
-              radius: 18,
-            ),
+            if (!widget.isGroup)
+              UserAvatar(
+                initials: other.initials,
+                color: other.avatarColor,
+                photo: other.photo,
+                radius: 18,
+              )
+            else
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                child: Icon(
+                  Icons.groups_2_outlined,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                ),
+              ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(other.name, style: const TextStyle(fontSize: 16)),
                   Text(
-                    other.email,
+                    widget.isGroup
+                        ? widget.groupName ?? 'Group chat'
+                        : other.name,
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  Text(
+                    widget.isGroup
+                        ? '$groupMemberCount members${memberNames.isEmpty ? '' : ' · $memberNames'}'
+                        : other.email,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 12,
@@ -162,7 +222,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (messages.isEmpty) {
                   return Center(
                     child: Text(
-                      'Say hi to ${other.name}!',
+                      widget.isGroup
+                          ? 'Start the conversation!'
+                          : 'Say hi to ${other.name}!',
                       style: TextStyle(color: context.surfaces.mutedText),
                     ),
                   );
@@ -189,6 +251,12 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       );
                     }
+                    final matchingMembers = widget.groupMembers.where(
+                      (member) => member.uid == message.senderId,
+                    );
+                    final sender = matchingMembers.isEmpty
+                        ? null
+                        : matchingMembers.first;
                     return Align(
                       alignment: isMine
                           ? Alignment.centerRight
@@ -211,13 +279,33 @@ class _ChatScreenState extends State<ChatScreen> {
                           ),
                           borderRadius: BorderRadius.circular(18),
                         ),
-                        child: Text(
-                          message.text,
-                          style: TextStyle(
-                            color: isMine
-                                ? Colors.white
-                                : Theme.of(context).colorScheme.onSurface,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.isGroup && !isMine)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 3),
+                                child: Text(
+                                  sender?.name ?? 'Member',
+                                  style: TextStyle(
+                                    color: isMine
+                                        ? Colors.white70
+                                        : Theme.of(context).colorScheme.primary,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            Text(
+                              message.text,
+                              style: TextStyle(
+                                color: isMine
+                                    ? Colors.white
+                                    : Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );

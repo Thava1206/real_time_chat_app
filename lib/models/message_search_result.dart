@@ -14,11 +14,27 @@ extension MessageSearchScopeLabel on MessageSearchScope {
 class MessageSearchResult {
   const MessageSearchResult({
     required this.chatId,
-    required this.otherUser,
+    required this.members,
     required this.message,
+    this._otherUser,
+    this.groupName,
   });
 
   final String chatId;
-  final AppUser otherUser;
+
+  /// For groups, this placeholder keeps older direct-chat UI callers working.
+  final AppUser? _otherUser;
+  AppUser get otherUser =>
+      _otherUser ??
+      AppUser(
+        uid: chatId,
+        name: groupName ?? 'Group chat',
+        email: '',
+        avatarColor: AppUser.avatarColorFor(chatId),
+      );
+  final String? groupName;
+  final List<AppUser> members;
   final ChatMessage message;
+
+  bool get isGroup => groupName != null;
 }

@@ -39,12 +39,24 @@ service cloud.firestore {
       }
     }
 
-    // A chat's id is its two participants' uids, sorted and joined with "_",
-    // so membership can be checked from the path even before the chat exists.
+    // Membership is stored on each conversation so group ids can be generated
+    // independently of the participant list.
     function isChatMember(chatId) {
       return request.auth != null
-        && chatId.split('_').size() == 2
-        && request.auth.uid in chatId.split('_');
+        && exists(/databases/$(database)/documents/chats/$(chatId))
+        && request.auth.uid in get(
+          /databases/$(database)/documents/chats/$(chatId)
+        ).data.participants;
+    }
+
+    // Includes a conversation created in the same atomic batch as its first
+    // message, while still checking the members in the committed chat data.
+    function isChatMemberAfter(chatId) {
+      return request.auth != null
+        && existsAfter(/databases/$(database)/documents/chats/$(chatId))
+        && request.auth.uid in getAfter(
+          /databases/$(database)/documents/chats/$(chatId)
+        ).data.participants;
     }
 
     function isValidText(text) {
@@ -56,25 +68,52 @@ service cloud.firestore {
       return image is string && image.size() > 0 && image.size() <= 900000;
     }
 
+    function isValidChatWrite(data) {
+      return data.keys().hasOnly([
+          'participants', 'type', 'name', 'createdBy',
+          'lastMessage', 'lastSenderId', 'updatedAt'
+        ])
+        && data.participants is list
+        && data.participants.size() >= 2
+        && request.auth.uid in data.participants
+        && data.lastSenderId == request.auth.uid
+        && isValidText(data.lastMessage)
+        && data.updatedAt == request.time;
+    }
+
     match /chats/{chatId} {
       // Checked against the stored participants so the Messages tab can list
       // chats with an array-contains query.
       allow read: if request.auth != null
         && request.auth.uid in resource.data.participants;
-      allow create, update: if isChatMember(chatId)
-        && request.resource.data.keys().hasOnly(
-          ['participants', 'lastMessage', 'lastSenderId', 'updatedAt'])
-        && request.resource.data.participants == chatId.split('_')
-        && request.resource.data.lastSenderId == request.auth.uid
-        && isValidText(request.resource.data.lastMessage)
-        && request.resource.data.updatedAt == request.time;
+      allow create: if request.auth != null
+        && isValidChatWrite(request.resource.data)
+        && (
+          (request.resource.data.get('type', 'direct') == 'direct'
+            && request.resource.data.participants.size() == 2)
+          ||
+          (request.resource.data.type == 'group'
+            && request.resource.data.participants.size() >= 3
+            && request.resource.data.name is string
+            && request.resource.data.name.size() > 0
+            && request.resource.data.name.size() <= 50
+            && request.resource.data.createdBy == request.auth.uid)
+        );
+      allow update: if isChatMember(chatId)
+        && isValidChatWrite(request.resource.data)
+        && request.resource.data.participants == resource.data.participants
+        && request.resource.data.get('type', 'direct')
+          == resource.data.get('type', 'direct')
+        && request.resource.data.get('name', '') == resource.data.get('name', '')
+        && request.resource.data.get('createdBy', '')
+          == resource.data.get('createdBy', '');
       allow delete: if false;
 
       // Messages can be sent and read by the two members, but never edited.
       // A message is either text, or an image with empty text.
       match /messages/{messageId} {
         allow read: if isChatMember(chatId);
-        allow create: if isChatMember(chatId)
+        allow create: if isChatMemberAfter(chatId)
           && request.resource.data.keys().hasOnly(
             ['senderId', 'text', 'image', 'createdAt'])
           && request.resource.data.senderId == request.auth.uid

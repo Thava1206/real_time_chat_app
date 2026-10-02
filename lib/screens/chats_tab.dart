@@ -1,21 +1,30 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/message_search_result.dart';
 import '../models/chat_summary.dart';
+import '../models/app_user.dart';
 import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
+import '../services/user_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/message_search_results.dart';
 import 'chat_screen.dart';
 
 class ChatsTab extends StatefulWidget {
-  const ChatsTab({super.key, this.currentUid, this.chatService});
+  const ChatsTab({
+    super.key,
+    this.currentUid,
+    this.chatService,
+    this.userService,
+  });
 
   final String? currentUid;
   final ChatService? chatService;
+  final UserService? userService;
 
   @override
   State<ChatsTab> createState() => _ChatsTabState();
@@ -23,6 +32,7 @@ class ChatsTab extends StatefulWidget {
 
 class _ChatsTabState extends State<ChatsTab> {
   late final ChatService _chatService = widget.chatService ?? ChatService();
+  late final UserService _userService = widget.userService ?? UserService();
   late final Stream<List<ChatSummary>>? _chats = widget.currentUid == null
       ? null
       : _chatService.watchChats(widget.currentUid!);
@@ -69,16 +79,68 @@ class _ChatsTabState extends State<ChatsTab> {
       context,
       (_) => ChatScreen(
         currentUid: widget.currentUid!,
-        otherUser: result.otherUser,
+        otherUser: result.isGroup ? null : result.otherUser,
+        chatId: result.isGroup ? result.chatId : null,
+        groupName: result.groupName,
+        groupMembers: result.members,
         chatService: _chatService,
       ),
     );
+  }
+
+  Future<void> _createGroup() async {
+    final uid = widget.currentUid;
+    if (uid == null) return;
+    final details = await showDialog<_GroupDetails>(
+      context: context,
+      builder: (_) =>
+          _CreateGroupDialog(currentUid: uid, userService: _userService),
+    );
+    if (details == null || !mounted) return;
+
+    try {
+      final chatId = await _chatService.createGroupChat(
+        creatorId: uid,
+        name: details.name,
+        participantIds: details.members.map((member) => member.uid).toList(),
+      );
+      if (!mounted) return;
+      await pushAppPage<void>(
+        context,
+        (_) => ChatScreen(
+          currentUid: uid,
+          chatId: chatId,
+          groupName: details.name,
+          groupMembers: details.members,
+          chatService: _chatService,
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final reason =
+          error is FirebaseException && error.code == 'permission-denied'
+          ? 'Firestore denied this write. Deploy the latest firestore.rules.'
+          : 'Could not create the group chat.';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(reason)));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.tonalIcon(
+              onPressed: widget.currentUid == null ? null : _createGroup,
+              icon: const Icon(Icons.group_add_outlined),
+              label: const Text('New group'),
+            ),
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: TextField(
@@ -172,18 +234,36 @@ class _ChatsTabState extends State<ChatsTab> {
 
   Widget _buildChatTile(BuildContext context, ChatSummary chat) {
     final other = chat.otherUser;
-    final preview = chat.lastSenderId == widget.currentUid
+    final sender = chat.members.where(
+      (member) => member.uid == chat.lastSenderId,
+    );
+    final senderName = chat.lastSenderId == widget.currentUid
+        ? 'You'
+        : sender.isEmpty
+        ? ''
+        : sender.first.name;
+    final preview = chat.isGroup && senderName.isNotEmpty
+        ? '$senderName: ${chat.lastMessage}'
+        : chat.lastSenderId == widget.currentUid
         ? 'You: ${chat.lastMessage}'
         : chat.lastMessage;
     return ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: UserAvatar(
-        initials: other.initials,
-        color: other.avatarColor,
-        photo: other.photo,
-      ),
+      leading: chat.isGroup
+          ? CircleAvatar(
+              backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              child: Icon(
+                Icons.groups_2_outlined,
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            )
+          : UserAvatar(
+              initials: other.initials,
+              color: other.avatarColor,
+              photo: other.photo,
+            ),
       title: Text(
-        other.name,
+        chat.isGroup ? chat.groupName ?? 'Group chat' : other.name,
         style: const TextStyle(fontWeight: FontWeight.w600),
       ),
       subtitle: Text(
@@ -200,12 +280,136 @@ class _ChatsTabState extends State<ChatsTab> {
         context,
         (_) => ChatScreen(
           currentUid: widget.currentUid!,
-          otherUser: other,
+          otherUser: chat.isGroup ? null : other,
+          chatId: chat.isGroup ? chat.chatId : null,
+          groupName: chat.groupName,
+          groupMembers: chat.members,
           chatService: _chatService,
         ),
       ),
     );
   }
+}
+
+class _GroupDetails {
+  const _GroupDetails(this.name, this.members);
+
+  final String name;
+  final List<AppUser> members;
+}
+
+class _CreateGroupDialog extends StatefulWidget {
+  const _CreateGroupDialog({
+    required this.currentUid,
+    required this.userService,
+  });
+
+  final String currentUid;
+  final UserService userService;
+
+  @override
+  State<_CreateGroupDialog> createState() => _CreateGroupDialogState();
+}
+
+class _CreateGroupDialogState extends State<_CreateGroupDialog> {
+  final _nameController = TextEditingController();
+  final _selected = <String, AppUser>{};
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _toggle(AppUser user, bool selected) {
+    setState(() {
+      if (selected) {
+        _selected[user.uid] = user;
+      } else {
+        _selected.remove(user.uid);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Create a group'),
+    content: SizedBox(
+      width: 420,
+      height: 420,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _nameController,
+            maxLength: 50,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(labelText: 'Group name'),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Choose at least two contacts',
+            style: TextStyle(color: context.surfaces.mutedText),
+          ),
+          const SizedBox(height: 4),
+          Expanded(
+            child: StreamBuilder<List<AppUser>>(
+              stream: widget.userService.watchContacts(widget.currentUid),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(child: Text('Could not load contacts.'));
+                }
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final contacts = snapshot.data ?? [];
+                if (contacts.isEmpty) {
+                  return const Center(
+                    child: Text('Add contacts before creating a group.'),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: contacts.length,
+                  itemBuilder: (context, index) {
+                    final user = contacts[index];
+                    return CheckboxListTile(
+                      value: _selected.containsKey(user.uid),
+                      onChanged: (value) => _toggle(user, value ?? false),
+                      secondary: UserAvatar(
+                        initials: user.initials,
+                        color: user.avatarColor,
+                        radius: 18,
+                      ),
+                      title: Text(user.name),
+                      subtitle: Text(user.email),
+                      controlAffinity: ListTileControlAffinity.trailing,
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        onPressed: _nameController.text.trim().isEmpty || _selected.length < 2
+            ? null
+            : () => Navigator.of(context).pop(
+                _GroupDetails(
+                  _nameController.text.trim(),
+                  _selected.values.toList(),
+                ),
+              ),
+        child: const Text('Create group'),
+      ),
+    ],
+  );
 }
 
 /// Shows the time for today's messages and the date for older ones.

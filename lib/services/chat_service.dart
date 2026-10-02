@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../models/app_user.dart';
 import '../models/chat_message.dart';
 import '../models/chat_summary.dart';
 import '../models/message_search_result.dart';
 import 'user_service.dart';
 
-/// Sends and streams one-to-one messages stored in the `chats` collection.
+/// Sends and streams direct and group conversations in the `chats` collection.
 ///
 /// Each conversation lives at `chats/{chatId}`, where the id is both user ids
 /// sorted and joined with `_`, so either participant opens the same chat.
@@ -46,44 +47,55 @@ class ChatService {
       .map((snapshot) => snapshot.docs.map(ChatMessage.fromFirestore).toList());
 
   /// Emits the user's conversations, most recently active first.
-  Stream<List<ChatSummary>> watchChats(String uid) => _chats
-      .where('participants', arrayContains: uid)
-      .snapshots()
-      .asyncMap((snapshot) async {
-        String otherUid(Map<String, dynamic> data) =>
-            (data['participants'] as List).cast<String>().firstWhere(
+  Stream<List<ChatSummary>> watchChats(
+    String uid,
+  ) => _chats.where('participants', arrayContains: uid).snapshots().asyncMap((
+    snapshot,
+  ) async {
+    final profiles = await _userService.fetchUsers(
+      snapshot.docs
+          .expand((doc) => (doc.data()['participants'] as List).cast<String>())
+          .toList(),
+    );
+
+    final chats = <ChatSummary>[];
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final participantIds = (data['participants'] as List).cast<String>();
+      final members = participantIds
+          .map((id) => profiles[id])
+          .whereType<AppUser>()
+          .toList();
+      final isGroup = data['type'] == 'group' || participantIds.length > 2;
+      final otherUser = isGroup
+          ? null
+          : profiles[participantIds.firstWhere(
               (id) => id != uid,
               orElse: () => uid,
-            );
-
-        final profiles = await _userService.fetchUsers(
-          snapshot.docs.map((doc) => otherUid(doc.data())).toList(),
-        );
-
-        final chats = <ChatSummary>[];
-        for (final doc in snapshot.docs) {
-          final data = doc.data();
-          final otherUser = profiles[otherUid(data)];
-          if (otherUser == null) continue;
-          chats.add(
-            ChatSummary(
-              chatId: doc.id,
-              otherUser: otherUser,
-              lastMessage: data['lastMessage'] as String? ?? '',
-              lastSenderId: data['lastSenderId'] as String? ?? '',
-              updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
-            ),
-          );
-        }
-        // Sorted here rather than in the query to avoid needing a composite
-        // index. A just-sent chat has no server time yet, so it goes first.
-        chats.sort((a, b) {
-          if (a.updatedAt == null) return -1;
-          if (b.updatedAt == null) return 1;
-          return b.updatedAt!.compareTo(a.updatedAt!);
-        });
-        return chats;
-      });
+            )];
+      if (!isGroup && otherUser == null) continue;
+      chats.add(
+        ChatSummary(
+          chatId: doc.id,
+          members: members,
+          otherUser: otherUser,
+          isGroup: isGroup,
+          groupName: isGroup ? data['name'] as String? ?? 'Group chat' : null,
+          lastMessage: data['lastMessage'] as String? ?? '',
+          lastSenderId: data['lastSenderId'] as String? ?? '',
+          updatedAt: (data['updatedAt'] as Timestamp?)?.toDate(),
+        ),
+      );
+    }
+    // Sorted here rather than in the query to avoid needing a composite
+    // index. A just-sent chat has no server time yet, so it goes first.
+    chats.sort((a, b) {
+      if (a.updatedAt == null) return -1;
+      if (b.updatedAt == null) return 1;
+      return b.updatedAt!.compareTo(a.updatedAt!);
+    });
+    return chats;
+  });
 
   /// Searches message history across this user's conversations. Filtering is
   /// performed locally so partial-text matching works without new indexes or
@@ -99,17 +111,28 @@ class ChatService {
     final chatSnapshot = await _chats
         .where('participants', arrayContains: uid)
         .get();
-    String otherUid(Map<String, dynamic> data) => (data['participants'] as List)
-        .cast<String>()
-        .firstWhere((id) => id != uid, orElse: () => uid);
     final profiles = await _userService.fetchUsers(
-      chatSnapshot.docs.map((doc) => otherUid(doc.data())).toList(),
+      chatSnapshot.docs
+          .expand((doc) => (doc.data()['participants'] as List).cast<String>())
+          .toList(),
     );
     final results = <MessageSearchResult>[];
 
     for (final chat in chatSnapshot.docs) {
-      final otherUser = profiles[otherUid(chat.data())];
-      if (otherUser == null) continue;
+      final data = chat.data();
+      final participantIds = (data['participants'] as List).cast<String>();
+      final members = participantIds
+          .map((id) => profiles[id])
+          .whereType<AppUser>()
+          .toList();
+      final isGroup = data['type'] == 'group' || participantIds.length > 2;
+      final otherUser = isGroup
+          ? null
+          : profiles[participantIds.firstWhere(
+              (id) => id != uid,
+              orElse: () => uid,
+            )];
+      if (!isGroup && otherUser == null) continue;
       final messages = await _messages(chat.id).orderBy('createdAt').get();
       for (final document in messages.docs) {
         final message = ChatMessage.fromFirestore(document);
@@ -124,7 +147,11 @@ class ChatService {
           results.add(
             MessageSearchResult(
               chatId: chat.id,
+              members: members,
               otherUser: otherUser,
+              groupName: isGroup
+                  ? data['name'] as String? ?? 'Group chat'
+                  : null,
               message: message,
             ),
           );
@@ -203,10 +230,115 @@ class ChatService {
           ..set(_messages(chatId).doc(), message.toFirestore())
           ..set(_chats.doc(chatId), {
             'participants': _participants(senderId, recipientId),
+            'type': 'direct',
             'lastMessage': preview,
             'lastSenderId': senderId,
             'updatedAt': FieldValue.serverTimestamp(),
           }))
         .commit();
+  }
+
+  /// Creates a named group with the creator and at least two other members.
+  /// Returns the generated conversation id.
+  Future<String> createGroupChat({
+    required String creatorId,
+    required String name,
+    required List<String> participantIds,
+  }) async {
+    final trimmedName = name.trim();
+    final participants = {...participantIds, creatorId}.toList()..sort();
+    if (trimmedName.isEmpty || trimmedName.length > 50) {
+      throw ArgumentError.value(
+        name,
+        'name',
+        'Group name must be 1–50 characters',
+      );
+    }
+    if (participants.length < 3) {
+      throw ArgumentError.value(
+        participantIds,
+        'participantIds',
+        'Select at least two other people for a group chat',
+      );
+    }
+
+    final chat = _chats.doc();
+    final createdMessage = ChatMessage(
+      id: '',
+      senderId: creatorId,
+      text: 'Created the group “$trimmedName”',
+    );
+    await (_firestore.batch()
+          ..set(chat, {
+            'participants': participants,
+            'type': 'group',
+            'name': trimmedName,
+            'createdBy': creatorId,
+            'lastMessage': createdMessage.text,
+            'lastSenderId': creatorId,
+            'updatedAt': FieldValue.serverTimestamp(),
+          })
+          ..set(_messages(chat.id).doc(), createdMessage.toFirestore()))
+        .commit();
+    return chat.id;
+  }
+
+  /// Sends a message to an existing group and refreshes its list preview.
+  Future<void> sendGroupMessage({
+    required String chatId,
+    required String senderId,
+    required String text,
+  }) {
+    final trimmed = text.trim();
+    _validateMessage(trimmed, text);
+    return _sendToGroup(
+      chatId,
+      ChatMessage(id: '', senderId: senderId, text: trimmed),
+      preview: trimmed,
+    );
+  }
+
+  /// Sends a base64-encoded [image] to an existing group.
+  Future<void> sendGroupImage({
+    required String chatId,
+    required String senderId,
+    required String image,
+  }) {
+    if (image.isEmpty) {
+      throw ArgumentError.value(image, 'image', 'Image is empty');
+    }
+    if (image.length > maxImageLength) {
+      throw ArgumentError.value(image.length, 'image', 'Image is too large');
+    }
+
+    return _sendToGroup(
+      chatId,
+      ChatMessage(id: '', senderId: senderId, text: '', image: image),
+      preview: imagePreview,
+    );
+  }
+
+  /// Adds [message] to a group and updates its last-message preview together.
+  Future<void> _sendToGroup(
+    String chatId,
+    ChatMessage message, {
+    required String preview,
+  }) =>
+      (_firestore.batch()
+            ..set(_messages(chatId).doc(), message.toFirestore())
+            ..update(_chats.doc(chatId), {
+              'lastMessage': preview,
+              'lastSenderId': message.senderId,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }))
+          .commit();
+
+  static void _validateMessage(String trimmed, String original) {
+    if (trimmed.isEmpty) {
+      throw ArgumentError.value(original, 'text', 'Message is empty');
+    }
+    if (trimmed.length > maxMessageLength) {
+      throw ArgumentError.value(original, 'text', 'Message is too long');
+    }
   }
 }
