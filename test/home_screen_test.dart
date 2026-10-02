@@ -153,6 +153,33 @@ void main() {
     expect(screen.currentUid, 'me');
   });
 
+  testWidgets('selecting a contact edits its local name and note', (
+    tester,
+  ) async {
+    await pumpHome(tester);
+    await tester.tap(find.text('Contacts'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Maya Chen'));
+    await tester.pumpAndSettle();
+    expect(find.text('Edit contact info'), findsOneWidget);
+    expect(find.text('maya@example.com'), findsWidgets);
+
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Contact name'),
+      'Maya C.',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextFormField, 'Note'),
+      'Design team',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Maya C.'), findsOneWidget);
+    expect(find.text('Design team'), findsOneWidget);
+  });
+
   testWidgets('Add Contact searches and saves a user under contacts', (
     tester,
   ) async {

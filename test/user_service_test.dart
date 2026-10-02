@@ -132,4 +132,28 @@ void main() {
     expect(doc.data()!['nameLower'], 'jane smith');
     expect(doc.data()!['bio'], 'Hi!');
   });
+
+  test('updateContact changes only the owner contact information', () async {
+    await userService.createProfile(
+      uid: 'u2',
+      name: 'Sam Okafor',
+      email: 'sam@example.com',
+    );
+    await userService.addContact('u1', 'u2');
+
+    await userService.updateContact(
+      'u1',
+      'u2',
+      displayName: ' Samuel ',
+      note: ' Work friend ',
+    );
+
+    final contact = (await userService.watchContacts('u1').first).single;
+    expect(contact.name, 'Samuel');
+    expect(contact.bio, 'Work friend');
+
+    final publicProfile = await userService.watchUser('u2').first;
+    expect(publicProfile!.name, 'Sam Okafor');
+    expect(publicProfile.bio, isEmpty);
+  });
 }
