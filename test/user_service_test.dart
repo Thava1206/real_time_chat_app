@@ -132,4 +132,20 @@ void main() {
     expect(doc.data()!['nameLower'], 'jane smith');
     expect(doc.data()!['bio'], 'Hi!');
   });
+
+  test('updatePhoto sets and removes the profile photo', () async {
+    await userService.createProfile(
+      uid: 'u1',
+      name: 'Jane Doe',
+      email: 'jane@example.com',
+    );
+
+    await userService.updatePhoto('u1', 'cGhvdG8=');
+    expect((await userService.watchUser('u1').first)!.photo, 'cGhvdG8=');
+
+    await userService.updatePhoto('u1', null);
+    final doc = await firestore.collection('users').doc('u1').get();
+    expect(doc.data()!.containsKey('photo'), isFalse);
+    expect((await userService.watchUser('u1').first)!.photo, isNull);
+  });
 }

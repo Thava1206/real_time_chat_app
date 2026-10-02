@@ -82,6 +82,16 @@ class AuthService {
     }
   }
 
+  /// Sets the signed-in user's profile photo, or removes it when null.
+  Future<void> updatePhoto(String? photo) async {
+    final user = _firebaseAuth.currentUser!;
+    try {
+      await _userService.updatePhoto(user.uid, photo);
+    } on FirebaseException {
+      throw AuthException('Could not save your photo. Please try again.');
+    }
+  }
+
   String _messageForException(FirebaseAuthException exception) {
     switch (exception.code) {
       case 'invalid-email':
