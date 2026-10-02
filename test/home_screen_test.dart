@@ -80,12 +80,15 @@ void main() {
     await pumpHome(tester);
 
     await tester.enterText(find.byType(TextField), 'nobody');
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
     expect(find.text('Priya Patel'), findsNothing);
 
     await tester.enterText(find.byType(TextField), 'meeting');
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
     expect(find.text('Priya Patel'), findsOneWidget);
+    expect(find.text('Received'), findsWidgets);
   });
 
   testWidgets('bottom bar switches to the Contacts tab', (tester) async {

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:real_time_chat_app/services/chat_service.dart';
 import 'package:real_time_chat_app/services/user_service.dart';
+import 'package:real_time_chat_app/models/message_search_result.dart';
 
 void main() {
   late FakeFirebaseFirestore firestore;
@@ -94,6 +95,44 @@ void main() {
     expect(bobChats.single.otherUser.name, 'Alice Wong');
     expect(bobChats.single.lastMessage, 'Hello Bob');
     expect(bobChats.single.lastSenderId, 'alice');
+  });
+
+  test('searchMessages searches all, sent, and received messages', () async {
+    await chatService.sendMessage(
+      senderId: 'alice',
+      recipientId: 'bob',
+      text: 'Project update from Alice',
+    );
+    await chatService.sendMessage(
+      senderId: 'bob',
+      recipientId: 'alice',
+      text: 'Project update from Bob',
+    );
+    await chatService.sendMessage(
+      senderId: 'cara',
+      recipientId: 'alice',
+      text: 'Unrelated note',
+    );
+
+    final all = await chatService.searchMessages(
+      uid: 'alice',
+      query: 'project UPDATE',
+    );
+    final sent = await chatService.searchMessages(
+      uid: 'alice',
+      query: 'project',
+      scope: MessageSearchScope.sent,
+    );
+    final received = await chatService.searchMessages(
+      uid: 'alice',
+      query: 'project',
+      scope: MessageSearchScope.received,
+    );
+
+    expect(all, hasLength(2));
+    expect(sent.single.message.senderId, 'alice');
+    expect(received.single.message.senderId, 'bob');
+    expect(received.single.otherUser.name, 'Bob Stone');
   });
 
   test('rejects empty, overly long and self messages', () {
