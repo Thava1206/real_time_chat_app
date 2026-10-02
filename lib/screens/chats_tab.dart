@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/message_search_result.dart';
 import '../models/chat_summary.dart';
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/user_avatar.dart';
@@ -64,13 +65,12 @@ class _ChatsTabState extends State<ChatsTab> {
   }
 
   void _openResult(MessageSearchResult result) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(
-          currentUid: widget.currentUid!,
-          otherUser: result.otherUser,
-          chatService: _chatService,
-        ),
+    pushAppPage<void>(
+      context,
+      (_) => ChatScreen(
+        currentUid: widget.currentUid!,
+        otherUser: result.otherUser,
+        chatService: _chatService,
       ),
     );
   }
@@ -192,13 +192,12 @@ class _ChatsTabState extends State<ChatsTab> {
         _formatTime(chat.updatedAt),
         style: TextStyle(fontSize: 12, color: context.surfaces.mutedText),
       ),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => ChatScreen(
-            currentUid: widget.currentUid!,
-            otherUser: other,
-            chatService: _chatService,
-          ),
+      onTap: () => pushAppPage<void>(
+        context,
+        (_) => ChatScreen(
+          currentUid: widget.currentUid!,
+          otherUser: other,
+          chatService: _chatService,
         ),
       ),
     );

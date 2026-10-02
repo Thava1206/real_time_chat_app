@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../navigation/app_page_route.dart';
 import '../services/auth_service.dart';
 import 'signup_screen.dart';
 
@@ -146,10 +147,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _isSubmitting
                         ? null
                         : () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => const SignUpScreen(),
-                              ),
+                            pushAppPage<void>(
+                              context,
+                              (_) => const SignUpScreen(),
                             );
                           },
                     child: const Text("Don't have an account? Sign up"),

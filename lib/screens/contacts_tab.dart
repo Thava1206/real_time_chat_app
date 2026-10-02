@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/app_user.dart';
+import '../navigation/app_page_route.dart';
 import '../services/chat_service.dart';
 import '../services/user_service.dart';
 import '../theme/app_theme.dart';
@@ -101,13 +102,12 @@ class _ContactsTabState extends State<ContactsTab> {
                               Icons.chat_bubble_outline,
                               color: Theme.of(context).colorScheme.primary,
                             ),
-                            onPressed: () => Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => ChatScreen(
-                                  currentUid: uid,
-                                  otherUser: contact,
-                                  chatService: widget.chatService,
-                                ),
+                            onPressed: () => pushAppPage<void>(
+                              context,
+                              (_) => ChatScreen(
+                                currentUid: uid,
+                                otherUser: contact,
+                                chatService: widget.chatService,
                               ),
                             ),
                           ),
